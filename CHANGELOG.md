@@ -1,0 +1,430 @@
+# Changelog
+
+All notable changes to `bspdx/keystone` will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+**Note:** This CHANGELOG was created starting with v0.3.0. Changes prior to this version were not formally documented.
+
+---
+
+## [0.6.0] - Unreleased
+
+#### Changed
+
+- **BREAKING:** Renamed package from `bspdx/authkit` to `bspdx/keystone` to resolve naming conflict with WorkOS' renowned UI product.
+- **BREAKING:** Renamed configuration file from `config/authkit.php` to `config/keystone.php`.
+- **BREAKING:** Updated view namespace from `authkit::` to `keystone::`.
+- **BREAKING:** Renamed Blade component from `<x-authkit-styles>` to `<x-keystone-styles>`.
+- **BREAKING:** Updated CSS class names from `.authkit-*` to `.keystone-*`.
+- **BREAKING:** Updated service aliases from `authkit.*` to `keystone.*`.
+- **BREAKING:** Updated route names from `authkit.*` to `keystone.*`.
+- **BREAKING:** Renamed publish tags from `authkit-*` to `keystone-*`.
+- **BREAKING:** Renamed test files from `AuthKitTest.php` to `KeystoneTest.php` and `HasAuthKitTraitTest.php` to `HasKeystoneTraitTest.php`.
+- **BREAKING:** Renamed database seeder from `AuthKitSeeder` to `KeystoneSeeder`.
+- **BREAKING:** Renamed trait file from `HasAuthKit.php` to `HasKeystone.php` (class already named `HasKeystone`).
+- **BREAKING:** Renamed model files from `AuthKitRole.php` to `KeystoneRole.php` and `AuthKitPermission.php` to `KeystonePermission.php` (classes already named accordingly).
+- **BREAKING:** Renamed service provider file from `AuthKitServiceProvider.php` to `KeystoneServiceProvider.php` (class already named `KeystoneServiceProvider`).
+- **BREAKING:** Renamed command concern trait file from `InteractsWithAuthKit.php` to `InteractsWithKeystone.php` (trait already named `InteractsWithKeystone`).
+
+#### Migration Steps
+
+**1. Update Composer Dependencies**
+
+In your `composer.json`, replace:
+```json
+"bspdx/authkit": "^0.5"
+```
+
+With:
+```json
+"bspdx/keystone": "^0.6"
+```
+
+Then run:
+```bash
+composer remove bspdx/authkit
+composer require bspdx/keystone
+```
+
+**2. Update Configuration File**
+
+Rename the configuration file:
+```bash
+mv config/authkit.php config/keystone.php
+```
+
+**3. Update Namespaces**
+
+Replace all namespace references throughout your application:
+
+- `BSPDX\AuthKit\` → `BSPDX\Keystone\`
+
+Examples:
+```php
+// Before
+use BSPDX\AuthKit\Traits\HasAuthKit;
+use BSPDX\AuthKit\Models\AuthKitRole;
+use BSPDX\AuthKit\Models\AuthKitPermission;
+use BSPDX\AuthKit\Services\Contracts\PasskeyServiceInterface;
+
+// After
+use BSPDX\Keystone\Traits\HasKeystone;
+use BSPDX\Keystone\Models\KeystoneRole;
+use BSPDX\Keystone\Models\KeystonePermission;
+use BSPDX\Keystone\Services\Contracts\PasskeyServiceInterface;
+```
+
+**4. Update Trait Usage**
+
+In your User model (typically `app/Models/User.php`):
+```php
+// Before
+use BSPDX\AuthKit\Traits\HasAuthKit;
+class User extends Authenticatable implements HasPasskeys
+{
+    use HasAuthKit;
+}
+
+// After
+use BSPDX\Keystone\Traits\HasKeystone;
+class User extends Authenticatable implements HasPasskeys
+{
+    use HasKeystone;
+}
+```
+
+**5. Update Service Provider References**
+
+If you've manually registered the service provider in `config/app.php` or `bootstrap/providers.php`:
+```php
+// Before
+BSPDX\AuthKit\AuthKitServiceProvider::class,
+
+// After
+BSPDX\Keystone\KeystoneServiceProvider::class,
+```
+
+**6. Update Model References in Permission Config**
+
+If you've published the permission configuration (`config/permission.php`):
+```php
+// Before
+'models' => [
+    'permission' => \BSPDX\AuthKit\Models\AuthKitPermission::class,
+    'role' => \BSPDX\AuthKit\Models\AuthKitRole::class,
+],
+
+// After
+'models' => [
+    'permission' => \BSPDX\Keystone\Models\KeystonePermission::class,
+    'role' => \BSPDX\Keystone\Models\KeystoneRole::class,
+],
+```
+
+**7. Update View Namespaces**
+
+In your Blade views, update view includes:
+```blade
+{{-- Before --}}
+@include('authkit::components.keystone-styles')
+@include('authkit::components.login-form')
+
+{{-- After --}}
+@include('keystone::components.keystone-styles')
+@include('keystone::components.login-form')
+```
+
+**8. Update CSS Classes**
+
+If you have custom CSS or HTML targeting component classes:
+```css
+/* Before */
+.authkit-form { }
+.authkit-button { }
+.authkit-input { }
+--authkit-primary
+
+/* After */
+.keystone-form { }
+.keystone-button { }
+.keystone-input { }
+--keystone-primary
+```
+
+**9. Update Service Aliases**
+
+If you're resolving services from the container using aliases:
+```php
+// Before
+app('authkit.passkey')
+app('authkit.roles')
+app('authkit.permissions')
+app('authkit.authorization')
+
+// After
+app('keystone.passkey')
+app('keystone.roles')
+app('keystone.permissions')
+app('keystone.authorization')
+```
+
+**10. Update Publish Tags**
+
+If you've published assets using tags:
+```bash
+# Before
+php artisan vendor:publish --tag=authkit-config
+php artisan vendor:publish --tag=authkit-views
+php artisan vendor:publish --tag=authkit-migrations
+
+# After
+php artisan vendor:publish --tag=keystone-config
+php artisan vendor:publish --tag=keystone-views
+php artisan vendor:publish --tag=keystone-migrations
+```
+
+**11. Update Database Seeders**
+
+If you reference the seeder class:
+```php
+// Before
+use Database\Seeders\AuthKitSeeder;
+
+// After
+use Database\Seeders\KeystoneSeeder;
+```
+
+**12. Update Route References**
+
+If you reference routes by name:
+```php
+// Before
+route('authkit.profile.show')
+route('authkit.login.totp')
+
+// After
+route('keystone.profile.show')
+route('keystone.login.totp')
+```
+
+**13. Clear Caches**
+
+After making all changes, clear your application caches:
+```bash
+php artisan config:clear
+php artisan cache:clear
+php artisan view:clear
+php artisan route:clear
+composer dump-autoload
+```
+
+**14. Run Tests**
+
+Verify that your application still works correctly:
+```bash
+php artisan test
+```
+
+**Note:** No database migrations are required. The package uses the same table structures and column names.
+
+---
+
+## [0.5.4] 2026-01-24
+
+#### Added
+
+- Added an important notice at the very top of the project's `README.md` informing users about a naming conflict: "I just found out someone else made an AuthKit. I'll get around to renaming this soon, don't you worry!" This ensures visitors see the update immediately and reduces confusion while a rename is planned.
+
+---
+
+## [0.5.3] 2026-01-21
+
+#### Changed
+
+- Hardened passkey flows: clone/transform WebAuthn options client-side, return the exact options JSON with credentials, and validate against stored options during registration/authentication (passkey Blade components, passkey controller/service contract and implementation).
+
+---
+
+## [0.5.2] 2026-01-21
+
+#### Added
+
+- Added `pragmarx/google2fa-laravel` to the package requirements so TOTP flows ship with the core install.
+
+#### Changed
+
+- Updated `resources/views/components/two-factor-challenge.blade.php` to use the shared `authkit-styles` partial for consistent theming and layout.
+- AuthKit now registers the Fortify two-factor challenge view automatically when Fortify is present and no override is bound (see `AuthKitServiceProvider`).
+
+---
+
+## [0.5.1] 2026-01-21
+
+#### Removed
+
+- Removed `App\\` namespace from `autoload-dev` in composer.json (was used for local development only)
+
+---
+
+## [0.5.0] 2026-01-21
+
+#### Added
+
+**Passwordless Authentication**
+- New `LoginController` to handle passwordless login methods and TOTP authentication
+- New passwordless login routes and endpoints
+- Support for multiple authentication methods per user
+
+**User Profile Management**
+- New `ProfileController` for user profile display and authentication preference updates
+- New profile routes and endpoints
+- New methods in `HasAuthKit` trait for managing authentication preferences and available methods
+
+**Console Commands**
+- New Artisan commands for role management
+- New Artisan commands for permission management
+
+**Component Samples**
+- Added component samples for common authentication UI patterns
+
+#### Changed
+
+- Enhanced splash page with improved styling and content
+- Updated `TwoFactorAuthController` to maintain backward compatibility for recovery codes
+
+---
+
+## [Unreleased] -  0.4.0
+
+#### Changed
+
+**Breaking Changes**
+- **BREAKING:** `tenant_id` column is now always a UUID (was `unsignedBigInteger`)
+- **BREAKING:** Permission table migrations now auto-detect User model ID type
+  - If User model uses `HasUuids` trait, `model_morph_key` columns use `uuid`
+  - Otherwise falls back to `unsignedBigInteger`
+  - Detection uses `PasskeyConfig::getAuthenticatableModel()` to find the User model
+
+#### Removed
+
+- Removed `0001_01_01_00000_create_users_table.php` migration (conflicts with existing Laravel apps)
+- Removed `0001_01_01_00001_create_cache_table.php` migration (host app responsibility)
+- Removed `0001_01_01_00002_create_jobs_table.php` migration (host app responsibility)
+
+#### Migration instructions
+
+Review the [Migration Guide](MIGRATING-TO-SUTHKIT-0.4.0md) for help migrating to this new version. 
+
+---
+
+## [0.5.4] 2026-01-24
+
+#### Added
+
+- Added an important notice at the very top of the project's `README.md` informing users about a naming conflict: "I just found out someone else made an AuthKit. I'll get around to renaming this soon, don't you worry!" This ensures visitors see the update immediately and reduces confusion while a rename is planned.
+
+---
+
+## [0.5.3] 2026-01-21
+
+#### Changed
+
+- Hardened passkey flows: clone/transform WebAuthn options client-side, return the exact options JSON with credentials, and validate against stored options during registration/authentication (passkey Blade components, passkey controller/service contract and implementation).
+
+---
+  - Provides abstraction layer for passkey authentication contracts
+
+#### Usage
+
+```php
+use BSPDX\AuthKit\Contracts\HasPasskeys;
+
+class User extends Authenticatable implements HasPasskeys
+{
+    use HasAuthKit;
+    // ...
+}
+```
+
+---
+
+## [0.3.0] - 2026-01-19
+
+#### Added
+
+**Service Layer Architecture**
+- New `PasskeyService` with interface for all passkey operations
+- New `RoleService` with interface for role management
+- New `PermissionService` with interface for permission management
+- New `AuthorizationService` with interface for high-level authorization operations
+- All services registered in Laravel container with interface bindings
+- Service aliases: `authkit.passkey`, `authkit.roles`, `authkit.permissions`, `authkit.authorization`
+
+**Model Proxies**
+- New `BSPDX\AuthKit\Models\AuthKitRole` - Extends Spatie's Role model
+- New `BSPDX\AuthKit\Models\AuthKitPermission` - Extends Spatie's Permission model
+- New `AuthKitRole::isSuperAdmin()` method for checking super admin status
+
+#### Changed
+
+**Breaking Changes**
+- **BREAKING:** Controllers now use dependency injection for services instead of direct Spatie imports
+  - `PasskeyAuthController` now requires `PasskeyServiceInterface` injection
+  - `RolePermissionController` now requires `RoleServiceInterface`, `PermissionServiceInterface`, and `AuthorizationServiceInterface` injection
+- **BREAKING:** `config/permission.php` now references AuthKit models instead of Spatie models
+  - `'models.role'` → `\BSPDX\AuthKit\Models\AuthKitRole::class`
+  - `'models.permission'` → `\BSPDX\AuthKit\Models\AuthKitPermission::class`
+- **BREAKING:** All public APIs now type-hint AuthKit models (`AuthKitRole`, `AuthKitPermission`) instead of Spatie models
+- **BREAKING:** Route model binding for roles and permissions now uses AuthKit models
+
+**Non-Breaking Changes**
+- **Improved:** Complete isolation of Spatie dependencies behind service layer
+- **Improved:** Controllers no longer contain direct `use Spatie\*` imports
+- **Improved:** All external package usage confined to service implementations
+- **Maintained:** `HasAuthKit` trait still uses Spatie trait composition (no performance impact)
+- **Maintained:** All existing user-facing methods (`hasRole()`, `hasPermission()`, etc.) work unchanged
+
+#### Usage for v0.3.0
+
+Since AuthKit is in beta, refer to the updated README for current usage patterns.
+
+**Using Services in Controllers:**
+```php
+use BSPDX\AuthKit\Services\Contracts\RoleServiceInterface;
+
+class AdminController extends Controller
+{
+    public function __construct(
+        private RoleServiceInterface $roleService
+    ) {}
+
+    public function index()
+    {
+        $roles = $this->roleService->getAllWithPermissions();
+        // ...
+    }
+}
+```
+
+**Using AuthKit Models:**
+```php
+use BSPDX\AuthKit\Models\AuthKitRole;
+
+$adminRole = AuthKitRole::where('name', 'admin')->first();
+if ($adminRole->isSuperAdmin()) {
+    // ...
+}
+```
+
+**Configuration:**
+The package's `config/permission.php` automatically uses AuthKit models. No manual changes needed unless you've published the config.
+
+---
+
+## [0.2.0] and earlier
+
+Changes prior to v0.3.0 were not documented in this CHANGELOG.
+
+For historical changes, please see the [Git commit history](https://github.com/TheBootstrapParadox/AuthKit/commits/main).
