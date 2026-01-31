@@ -84,6 +84,9 @@ return [
 
         // Show roles and permissions on profile page (requires Spatie Laravel Permission)
         'show_permissions' => true,
+
+        // Enable multi-tenant mode (adds tenant_id to users table)
+        'multi_tenant' => env('KEYSTONE_MULTI_TENANT', false),
     ],
 
     /*
@@ -96,9 +99,6 @@ return [
     */
 
     'rbac' => [
-        // Enable multi-tenancy support for roles/permissions
-        'multi_tenant' => false,
-
         // Cache expiration time for roles and permissions (in seconds)
         'cache_expiration' => 60 * 60 * 24, // 24 hours
 
@@ -217,27 +217,6 @@ return [
 
         // Maximum passkey attempts
         'max_passkey_attempts' => 3,
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Multi-Tenancy Settings (Optional)
-    |--------------------------------------------------------------------------
-    |
-    | Enable these settings if you're using Spatie's Laravel Multitenancy
-    | or a similar multi-tenant architecture.
-    |
-    */
-
-    'multi_tenancy' => [
-        // Enable multi-tenant support
-        'enabled' => false,
-
-        // Tenant column name in database tables
-        'tenant_column' => 'tenant_id',
-
-        // Automatically scope queries by tenant
-        'auto_scope' => true,
     ],
 
     /*

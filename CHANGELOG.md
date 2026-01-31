@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.1] - 2026-02-01
+
+### Changed
+
+**Multi-Tenant Configuration Consolidation**
+- Consolidated multi-tenancy configuration into `config('keystone.features.multi_tenant')`
+- Removed duplicate configurations: `isMultitenant`, `rbac.multi_tenant`, and `multi_tenancy` section
+- Environment variable changed from `KEYSTONE_IS_MULTITENANT` to `KEYSTONE_MULTI_TENANT`
+- Migration `add_keystone_fields_to_users_table` now checks `features.multi_tenant` config
+- When enabled, adds `tenant_id` UUID column to users table for tenant isolation
+- Updated `InteractsWithKeystone` trait to use new config location
+
+### Migration Note
+
+If you were using `KEYSTONE_IS_MULTITENANT=true` in your `.env` file, update it to:
+```env
+KEYSTONE_MULTI_TENANT=true
+```
+
+---
+
 ## [0.7.0] - 2026-02-01
 
 ### Added

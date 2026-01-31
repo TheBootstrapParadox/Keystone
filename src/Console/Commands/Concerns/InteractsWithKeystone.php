@@ -43,7 +43,7 @@ trait InteractsWithKeystone
      */
     protected function isMultiTenantEnabled(): bool
     {
-        return config('keystone.rbac.multi_tenant', false);
+        return config('keystone.features.multi_tenant', false);
     }
 
     /**

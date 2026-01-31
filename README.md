@@ -136,14 +136,23 @@ The package configuration is located at `config/keystone.php`. Key settings:
     'passkeys' => true,
     'passkey_2fa' => true,
     'api_tokens' => true,
+    'update_profile' => true,
+    'update_passwords' => true,
+    'account_deletion' => false,
+    'passwordless_login' => true,
+    'show_permissions' => true,
+
+    // Enable multi-tenant mode (adds tenant_id column to users table)
+    'multi_tenant' => env('KEYSTONE_MULTI_TENANT', false),
 ],
 ```
+
+When `multi_tenant` is enabled, Keystone will add a `tenant_id` UUID column to the users table for tenant isolation.
 
 ### RBAC Settings
 
 ```php
 'rbac' => [
-    'multi_tenant' => false,
     'default_role' => 'user',
     'super_admin_role' => 'super-admin',
 ],
@@ -535,29 +544,6 @@ Quick summary:
 4. Configure Nginx/Caddy to use the certificates
 
 See the full guide for detailed instructions.
-
-## Multi-Tenancy
-
-Keystone is multi-tenancy ready. To enable:
-
-### Step 1: Enable in Configuration
-
-```php
-// config/keystone.php
-'multi_tenancy' => [
-    'enabled' => true,
-    'tenant_column' => 'tenant_id',
-    'auto_scope' => true,
-],
-
-'rbac' => [
-    'multi_tenant' => true,
-],
-```
-
-### Step 2: Scope Queries
-
-Use Spatie's multitenancy package or implement your own scoping logic.
 
 ## Testing
 

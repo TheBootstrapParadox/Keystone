@@ -25,8 +25,8 @@ return new class extends Migration {
                 $table->timestamp('two_factor_confirmed_at')->nullable()->after('two_factor_recovery_codes');
             }
 
-            // Multi-tenancy support
-            if (!Schema::hasColumn($tableName, 'tenant_id')) {
+            // Multi-tenancy support (only if enabled in features)
+            if (config('keystone.features.multi_tenant', false) && !Schema::hasColumn($tableName, 'tenant_id')) {
                 $table->uuid('tenant_id')->nullable()->after('id');
                 $table->index('tenant_id');
             }
