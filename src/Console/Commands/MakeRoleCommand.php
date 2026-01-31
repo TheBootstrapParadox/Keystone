@@ -30,7 +30,7 @@ class MakeRoleCommand extends Command
         $guard = $this->resolveGuard();
 
         if ($guard === null) {
-            return Command::FAILURE;
+            return self::FAILURE;
         }
 
         try {
@@ -58,10 +58,10 @@ class MakeRoleCommand extends Command
                 ]]
             );
 
-            return Command::SUCCESS;
+            return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to create role: {$e->getMessage()}");
-            return Command::FAILURE;
+            return self::FAILURE;
         }
     }
 

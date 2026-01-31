@@ -34,7 +34,7 @@ class AssignRoleCommand extends Command
 
         if (!$user) {
             $this->error("User '{$userIdentifier}' not found.");
-            return Command::FAILURE;
+            return self::FAILURE;
         }
 
         // Gather roles from arguments and options
@@ -42,7 +42,7 @@ class AssignRoleCommand extends Command
 
         if (empty($roles)) {
             $this->error('No roles specified. Provide role names as arguments or use --role option.');
-            return Command::FAILURE;
+            return self::FAILURE;
         }
 
         // Get current roles for display
@@ -85,11 +85,11 @@ class AssignRoleCommand extends Command
                 ]
             );
 
-            return Command::SUCCESS;
+            return self::SUCCESS;
         } catch (\Exception $e) {
             $action = $this->option('remove') ? 'remove' : 'assign';
             $this->error("Failed to {$action} roles: {$e->getMessage()}");
-            return Command::FAILURE;
+            return self::FAILURE;
         }
     }
 

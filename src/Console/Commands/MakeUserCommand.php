@@ -34,7 +34,7 @@ class MakeUserCommand extends Command
         // Production warning
         if (app()->environment('production')) {
             if (!$this->confirm('You are in production. Are you sure you want to create a user via CLI?')) {
-                return Command::SUCCESS;
+                return self::SUCCESS;
             }
         }
 
@@ -45,13 +45,13 @@ class MakeUserCommand extends Command
         // Validate email
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $this->error('Invalid email address.');
-            return Command::FAILURE;
+            return self::FAILURE;
         }
 
         // Check for existing user
         if (User::where('email', $email)->exists()) {
             $this->error("A user with email '{$email}' already exists.");
-            return Command::FAILURE;
+            return self::FAILURE;
         }
 
         // Get password
@@ -69,7 +69,7 @@ class MakeUserCommand extends Command
 
         if (strlen($password) < 8) {
             $this->error('Password must be at least 8 characters.');
-            return Command::FAILURE;
+            return self::FAILURE;
         }
 
         try {
@@ -113,10 +113,10 @@ class MakeUserCommand extends Command
                 $this->info('Make sure to save this password - it will not be shown again.');
             }
 
-            return Command::SUCCESS;
+            return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to create user: {$e->getMessage()}");
-            return Command::FAILURE;
+            return self::FAILURE;
         }
     }
 

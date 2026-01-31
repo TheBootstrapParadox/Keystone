@@ -73,6 +73,9 @@ class KeystoneServiceProvider extends ServiceProvider {
                 \BSPDX\Keystone\Console\Commands\MakeUserCommand::class,
                 \BSPDX\Keystone\Console\Commands\AssignRoleCommand::class,
                 \BSPDX\Keystone\Console\Commands\AssignPermissionCommand::class,
+                \BSPDX\Keystone\Console\Commands\ChangePasswordCommand::class,
+                \BSPDX\Keystone\Console\Commands\UnassignRoleCommand::class,
+                \BSPDX\Keystone\Console\Commands\UnassignPermissionCommand::class,
             ]);
         }
 

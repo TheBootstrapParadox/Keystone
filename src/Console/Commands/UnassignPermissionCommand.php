@@ -5,66 +5,55 @@ namespace BSPDX\Keystone\Console\Commands;
 use BSPDX\Keystone\Console\Commands\Concerns\InteractsWithKeystone;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
-use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
 use Illuminate\Console\Command;
 
-class AssignPermissionCommand extends Command
+class UnassignPermissionCommand extends Command
 {
     use InteractsWithKeystone;
 
-    protected $signature = 'keystone:assign-permission
-        {permission?* : Permission name(s) to assign}
-        {--P|permission=* : Permission(s) to assign (can be used multiple times)}
-        {--to-role= : Assign to a role}
-        {--to-user= : Assign directly to a user (ID or email)}
+    protected $signature = 'keystone:unassign-permission
+        {permission?* : Permission name(s) to remove}
+        {--P|permission=* : Permission(s) to remove (can be used multiple times)}
+        {--from-role= : Remove from a role}
+        {--from-user= : Remove from a user (ID or email)}
         {--guard= : The guard name}
-        {--sync : Replace existing permissions instead of adding}
-        {--remove : Remove the specified permissions instead of adding}';
+        {--all : Remove all permissions from the target}';
 
-    protected $description = 'Assign permission(s) to a role or user';
+    protected $description = 'Remove permission(s) from a role or user';
 
     public function __construct(
-        protected PermissionServiceInterface $permissionService,
-        protected RoleServiceInterface $roleService
+        protected PermissionServiceInterface $permissionService
     ) {
         parent::__construct();
     }
 
     public function handle(): int
     {
-        $toRole = $this->option('to-role');
-        $toUser = $this->option('to-user');
+        $fromRole = $this->option('from-role');
+        $fromUser = $this->option('from-user');
 
         // Validate target
-        if (!$toRole && !$toUser) {
-            $this->error('You must specify either --to-role or --to-user.');
+        if (!$fromRole && !$fromUser) {
+            $this->error('You must specify either --from-role or --from-user.');
             return self::FAILURE;
         }
 
-        if ($toRole && $toUser) {
-            $this->error('You cannot specify both --to-role and --to-user. Choose one.');
+        if ($fromRole && $fromUser) {
+            $this->error('You cannot specify both --from-role and --from-user. Choose one.');
             return self::FAILURE;
         }
 
-        // Gather permissions
-        $permissions = $this->gatherPermissions();
-
-        if (empty($permissions)) {
-            $this->error('No permissions specified. Provide permission names as arguments or use --permission option.');
-            return self::FAILURE;
+        if ($fromRole) {
+            return $this->removeFromRole($fromRole);
         }
 
-        if ($toRole) {
-            return $this->assignToRole($toRole, $permissions);
-        }
-
-        return $this->assignToUser($toUser, $permissions);
+        return $this->removeFromUser($fromUser);
     }
 
     /**
-     * Assign permissions to a role.
+     * Remove permissions from a role.
      */
-    protected function assignToRole(string $roleName, array $permissions): int
+    protected function removeFromRole(string $roleName): int
     {
         $guard = $this->resolveGuard();
 
@@ -83,24 +72,31 @@ class AssignPermissionCommand extends Command
 
         $previousPermissions = $role->permissions->pluck('name')->toArray();
 
-        try {
-            if ($this->option('remove')) {
-                $role->revokePermissionTo($permissions);
-                $action = 'removed from';
-            } elseif ($this->option('sync')) {
-                $this->roleService->syncPermissions($role, $permissions);
-                $action = 'synced to';
-            } else {
-                $role->givePermissionTo($permissions);
-                $action = 'assigned to';
+        if (empty($previousPermissions)) {
+            $this->info("Role '{$role->name}' has no permissions to remove.");
+            return self::SUCCESS;
+        }
+
+        if ($this->option('all')) {
+            $permissions = $previousPermissions;
+        } else {
+            $permissions = $this->gatherPermissions();
+
+            if (empty($permissions)) {
+                $this->error('No permissions specified. Provide permission names as arguments or use --permission option.');
+                return self::FAILURE;
             }
+        }
+
+        try {
+            $role->revokePermissionTo($permissions);
 
             $this->clearPermissionCache();
             $role->refresh();
 
             $currentPermissions = $role->permissions->pluck('name')->toArray();
 
-            $this->info("Permissions {$action} role: {$role->name}");
+            $this->info("Permissions removed from role: {$role->name}");
 
             $this->newLine();
             $this->table(
@@ -109,22 +105,22 @@ class AssignPermissionCommand extends Command
                     ['Role', $role->name],
                     ['Guard', $role->guard_name],
                     ['Previous Permissions', implode(', ', $previousPermissions) ?: '(none)'],
-                    [$this->option('remove') ? 'Removed Permissions' : 'Specified Permissions', implode(', ', $permissions)],
+                    ['Removed Permissions', implode(', ', $permissions)],
                     ['Current Permissions', implode(', ', $currentPermissions) ?: '(none)'],
                 ]
             );
 
             return self::SUCCESS;
         } catch (\Exception $e) {
-            $this->error("Failed to modify permissions: {$e->getMessage()}");
+            $this->error("Failed to remove permissions: {$e->getMessage()}");
             return self::FAILURE;
         }
     }
 
     /**
-     * Assign permissions directly to a user.
+     * Remove permissions from a user.
      */
-    protected function assignToUser(string $userIdentifier, array $permissions): int
+    protected function removeFromUser(string $userIdentifier): int
     {
         $user = $this->findUser($userIdentifier);
 
@@ -135,24 +131,31 @@ class AssignPermissionCommand extends Command
 
         $previousPermissions = $this->permissionService->getUserPermissions($user)->pluck('name')->toArray();
 
-        try {
-            if ($this->option('remove')) {
-                $user->revokePermissionTo($permissions);
-                $action = 'removed from';
-            } elseif ($this->option('sync')) {
-                $this->permissionService->syncToUser($user, $permissions);
-                $action = 'synced to';
-            } else {
-                $user->givePermissionTo($permissions);
-                $action = 'assigned to';
+        if (empty($previousPermissions)) {
+            $this->info("User '{$user->email}' has no direct permissions to remove.");
+            return self::SUCCESS;
+        }
+
+        if ($this->option('all')) {
+            $permissions = $previousPermissions;
+        } else {
+            $permissions = $this->gatherPermissions();
+
+            if (empty($permissions)) {
+                $this->error('No permissions specified. Provide permission names as arguments or use --permission option.');
+                return self::FAILURE;
             }
+        }
+
+        try {
+            $user->revokePermissionTo($permissions);
 
             $this->clearPermissionCache();
 
             $currentPermissions = $this->permissionService->getUserPermissions($user)->pluck('name')->toArray();
             $allPermissions = $this->permissionService->getAllUserPermissions($user)->pluck('name')->toArray();
 
-            $this->info("Permissions {$action} user: {$user->email}");
+            $this->info("Permissions removed from user: {$user->email}");
 
             $this->newLine();
             $this->table(
@@ -160,7 +163,7 @@ class AssignPermissionCommand extends Command
                 [
                     ['User', $user->email],
                     ['Previous Direct Permissions', implode(', ', $previousPermissions) ?: '(none)'],
-                    [$this->option('remove') ? 'Removed Permissions' : 'Specified Permissions', implode(', ', $permissions)],
+                    ['Removed Permissions', implode(', ', $permissions)],
                     ['Current Direct Permissions', implode(', ', $currentPermissions) ?: '(none)'],
                     ['All Permissions (incl. via roles)', count($allPermissions) . ' total'],
                 ]
@@ -168,7 +171,7 @@ class AssignPermissionCommand extends Command
 
             return self::SUCCESS;
         } catch (\Exception $e) {
-            $this->error("Failed to modify permissions: {$e->getMessage()}");
+            $this->error("Failed to remove permissions: {$e->getMessage()}");
             return self::FAILURE;
         }
     }

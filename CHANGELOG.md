@@ -9,9 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.6.0] - Unreleased
+## [0.6.1] - 2026-01-31
+
+#### Added
+
+- New `keystone:change-password` Artisan command to change a user's password by ID or email, with support for random password generation.
+- New `keystone:unassign-role` Artisan command to remove role(s) from a user, with `--all` flag to strip all roles.
+- New `keystone:unassign-permission` Artisan command to remove permission(s) from a role or user, with `--all` flag support.
+- Added `@method` PHPDoc blocks to `KeystoneRole` and `KeystonePermission` models for improved IDE autocompletion of inherited Spatie methods.
+
+## [0.6.0] - 2026-01-25
 
 #### Changed
+
+- Changed all console commands to use `self::SUCCESS` / `self::FAILURE` instead of `Command::SUCCESS` / `Command::FAILURE` to resolve PHP6606 static analysis warnings.
 
 - **BREAKING:** Renamed package from `bspdx/authkit` to `bspdx/keystone` to resolve naming conflict with WorkOS' renowned UI product.
 - **BREAKING:** Renamed configuration file from `config/authkit.php` to `config/keystone.php`.

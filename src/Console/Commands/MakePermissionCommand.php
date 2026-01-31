@@ -28,7 +28,7 @@ class MakePermissionCommand extends Command
         $guard = $this->resolveGuard();
 
         if ($guard === null) {
-            return Command::FAILURE;
+            return self::FAILURE;
         }
 
         try {
@@ -44,10 +44,10 @@ class MakePermissionCommand extends Command
                 [[$permission->name, $permission->guard_name]]
             );
 
-            return Command::SUCCESS;
+            return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to create permission: {$e->getMessage()}");
-            return Command::FAILURE;
+            return self::FAILURE;
         }
     }
 }
