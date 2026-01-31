@@ -2,7 +2,6 @@
 
 namespace BSPDX\Keystone\Console\Commands;
 
-use App\Models\User;
 use BSPDX\Keystone\Console\Commands\Concerns\InteractsWithKeystone;
 use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 use Illuminate\Console\Command;
@@ -49,7 +48,8 @@ class MakeUserCommand extends Command
         }
 
         // Check for existing user
-        if (User::where('email', $email)->exists()) {
+        $userClass = $this->getUserModel();
+        if ($userClass::where('email', $email)->exists()) {
             $this->error("A user with email '{$email}' already exists.");
             return self::FAILURE;
         }
@@ -74,7 +74,7 @@ class MakeUserCommand extends Command
 
         try {
             // Create the user
-            $user = User::create([
+            $user = $userClass::create([
                 'name' => $name,
                 'email' => $email,
                 'password' => Hash::make($password),

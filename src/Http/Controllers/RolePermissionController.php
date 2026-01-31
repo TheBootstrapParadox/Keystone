@@ -9,7 +9,7 @@ use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
 use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
-use App\Models\User;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 class RolePermissionController
 {
@@ -109,7 +109,7 @@ class RolePermissionController
     /**
      * Assign roles to a user.
      */
-    public function assignRoles(Request $request, User $user): JsonResponse
+    public function assignRoles(Request $request, Authenticatable $user): JsonResponse
     {
         $validated = $request->validate([
             'roles' => ['required', 'array'],
@@ -131,7 +131,7 @@ class RolePermissionController
     /**
      * Assign permissions to a user.
      */
-    public function assignPermissions(Request $request, User $user): JsonResponse
+    public function assignPermissions(Request $request, Authenticatable $user): JsonResponse
     {
         $validated = $request->validate([
             'permissions' => ['required', 'array'],
@@ -171,7 +171,7 @@ class RolePermissionController
     /**
      * Get user's roles and permissions.
      */
-    public function userRolesPermissions(User $user): JsonResponse
+    public function userRolesPermissions(Authenticatable $user): JsonResponse
     {
         return response()->json([
             'user' => [

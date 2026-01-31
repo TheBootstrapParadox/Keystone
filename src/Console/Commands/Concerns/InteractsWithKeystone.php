@@ -2,11 +2,18 @@
 
 namespace BSPDX\Keystone\Console\Commands\Concerns;
 
-use App\Models\User;
 use Spatie\Permission\PermissionRegistrar;
 
 trait InteractsWithKeystone
 {
+    /**
+     * Get the User model class.
+     */
+    protected function getUserModel(): string
+    {
+        return config('keystone.user.model')
+            ?? config('auth.providers.users.model', \App\Models\User::class);
+    }
     /**
      * Get the default guard name from config.
      */
@@ -66,12 +73,14 @@ trait InteractsWithKeystone
     /**
      * Find a user by ID or email.
      */
-    protected function findUser(string $identifier): ?User
+    protected function findUser(string $identifier)
     {
+        $userClass = $this->getUserModel();
+
         if (is_numeric($identifier)) {
-            return User::find($identifier);
+            return $userClass::find($identifier);
         }
 
-        return User::where('email', $identifier)->first();
+        return $userClass::where('email', $identifier)->first();
     }
 }

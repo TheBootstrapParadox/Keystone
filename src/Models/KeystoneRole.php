@@ -15,6 +15,23 @@ use Spatie\Permission\Models\Role;
 class KeystoneRole extends Role
 {
     /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
+    protected $fillable = ['name', 'guard_name', 'title', 'description'];
+
+    /**
+     * Get display name (title if available, otherwise name).
+     *
+     * @return string
+     */
+    public function getDisplayNameAttribute(): string
+    {
+        return $this->title ?? $this->name;
+    }
+
+    /**
      * Determine if this role is the super admin role.
      *
      * @return bool

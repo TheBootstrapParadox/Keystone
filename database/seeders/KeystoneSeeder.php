@@ -3,9 +3,8 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Spatie\Permission\Models\Role;
-use Spatie\Permission\Models\Permission;
-use App\Models\User;
+use BSPDX\Keystone\Models\KeystoneRole;
+use BSPDX\Keystone\Models\KeystonePermission;
 use Illuminate\Support\Facades\Hash;
 
 class KeystoneSeeder extends Seeder
@@ -18,51 +17,66 @@ class KeystoneSeeder extends Seeder
         // Reset cached roles and permissions
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        // Create permissions
+        // Create permissions with title and description
         $permissions = [
             // User permissions
-            'view-users',
-            'create-users',
-            'edit-users',
-            'delete-users',
+            ['name' => 'view-users', 'title' => 'View Users', 'description' => 'View user list and profiles'],
+            ['name' => 'create-users', 'title' => 'Create Users', 'description' => 'Create new user accounts'],
+            ['name' => 'edit-users', 'title' => 'Edit Users', 'description' => 'Modify existing user profiles'],
+            ['name' => 'delete-users', 'title' => 'Delete Users', 'description' => 'Remove user accounts from the system'],
 
             // Role & Permission management
-            'view-roles',
-            'create-roles',
-            'edit-roles',
-            'delete-roles',
-            'assign-roles',
+            ['name' => 'view-roles', 'title' => 'View Roles', 'description' => 'View available roles'],
+            ['name' => 'create-roles', 'title' => 'Create Roles', 'description' => 'Create new roles'],
+            ['name' => 'edit-roles', 'title' => 'Edit Roles', 'description' => 'Modify role permissions and settings'],
+            ['name' => 'delete-roles', 'title' => 'Delete Roles', 'description' => 'Remove roles from the system'],
+            ['name' => 'assign-roles', 'title' => 'Assign Roles', 'description' => 'Assign roles to users'],
 
-            'view-permissions',
-            'create-permissions',
-            'edit-permissions',
-            'delete-permissions',
-            'assign-permissions',
+            ['name' => 'view-permissions', 'title' => 'View Permissions', 'description' => 'View available permissions'],
+            ['name' => 'create-permissions', 'title' => 'Create Permissions', 'description' => 'Create new permissions'],
+            ['name' => 'edit-permissions', 'title' => 'Edit Permissions', 'description' => 'Modify permissions'],
+            ['name' => 'delete-permissions', 'title' => 'Delete Permissions', 'description' => 'Remove permissions'],
+            ['name' => 'assign-permissions', 'title' => 'Assign Permissions', 'description' => 'Assign permissions to roles or users'],
 
             // Content management examples
-            'view-posts',
-            'create-posts',
-            'edit-posts',
-            'delete-posts',
-            'publish-posts',
+            ['name' => 'view-posts', 'title' => 'View Posts', 'description' => 'View published and draft posts'],
+            ['name' => 'create-posts', 'title' => 'Create Posts', 'description' => 'Create new posts'],
+            ['name' => 'edit-posts', 'title' => 'Edit Posts', 'description' => 'Edit post content and metadata'],
+            ['name' => 'delete-posts', 'title' => 'Delete Posts', 'description' => 'Delete posts from the system'],
+            ['name' => 'publish-posts', 'title' => 'Publish Posts', 'description' => 'Publish posts to make them publicly visible'],
 
             // Settings
-            'view-settings',
-            'edit-settings',
+            ['name' => 'view-settings', 'title' => 'View Settings', 'description' => 'View application settings'],
+            ['name' => 'edit-settings', 'title' => 'Edit Settings', 'description' => 'Modify application configuration'],
         ];
 
-        foreach ($permissions as $permission) {
-            Permission::firstOrCreate(['name' => $permission]);
+        foreach ($permissions as $permissionData) {
+            KeystonePermission::firstOrCreate(
+                ['name' => $permissionData['name']],
+                $permissionData
+            );
         }
 
-        // Create roles and assign permissions
+        // Create roles with title and description
 
         // Super Admin - has all permissions
-        $superAdmin = Role::firstOrCreate(['name' => 'super-admin']);
-        $superAdmin->givePermissionTo(Permission::all());
+        $superAdmin = KeystoneRole::firstOrCreate(
+            ['name' => 'super-admin'],
+            [
+                'title' => 'Super Administrator',
+                'description' => 'Full system access with all permissions. Can manage users, roles, permissions, and all content.',
+            ]
+        );
+        $superAdmin->givePermissionTo(KeystonePermission::all());
 
         // Admin - most permissions except user/role management
-        $admin = Role::firstOrCreate(['name' => 'admin']);
+        $admin = KeystoneRole::firstOrCreate(
+            ['name' => 'admin'],
+            [
+                'title' => 'Administrator',
+                'description' => 'Manage content, users, and settings. Cannot delete users or modify roles.',
+            ]
+        );
         $admin->givePermissionTo([
             'view-users',
             'create-users',
@@ -79,7 +93,13 @@ class KeystoneSeeder extends Seeder
         ]);
 
         // Editor - content management only
-        $editor = Role::firstOrCreate(['name' => 'editor']);
+        $editor = KeystoneRole::firstOrCreate(
+            ['name' => 'editor'],
+            [
+                'title' => 'Editor',
+                'description' => 'Create, edit, and publish content. No access to users or settings.',
+            ]
+        );
         $editor->givePermissionTo([
             'view-posts',
             'create-posts',
@@ -88,7 +108,13 @@ class KeystoneSeeder extends Seeder
         ]);
 
         // User - basic read permissions
-        $user = Role::firstOrCreate(['name' => 'user']);
+        $user = KeystoneRole::firstOrCreate(
+            ['name' => 'user'],
+            [
+                'title' => 'User',
+                'description' => 'Basic access to view published content. Cannot create or modify anything.',
+            ]
+        );
         $user->givePermissionTo([
             'view-posts',
         ]);
@@ -104,8 +130,12 @@ class KeystoneSeeder extends Seeder
      */
     protected function createDemoUsers($superAdmin, $admin, $editor, $user): void
     {
+        // Resolve User class from config
+        $userClass = config('keystone.user.model')
+            ?? config('auth.providers.users.model', \App\Models\User::class);
+
         // Super Admin user
-        $superAdminUser = User::firstOrCreate(
+        $superAdminUser = $userClass::firstOrCreate(
             ['email' => 'superadmin@example.com'],
             [
                 'name' => 'Super Admin',
@@ -116,7 +146,7 @@ class KeystoneSeeder extends Seeder
         $superAdminUser->assignRole($superAdmin);
 
         // Admin user
-        $adminUser = User::firstOrCreate(
+        $adminUser = $userClass::firstOrCreate(
             ['email' => 'admin@example.com'],
             [
                 'name' => 'Admin User',
@@ -127,7 +157,7 @@ class KeystoneSeeder extends Seeder
         $adminUser->assignRole($admin);
 
         // Editor user
-        $editorUser = User::firstOrCreate(
+        $editorUser = $userClass::firstOrCreate(
             ['email' => 'editor@example.com'],
             [
                 'name' => 'Editor User',
@@ -138,7 +168,7 @@ class KeystoneSeeder extends Seeder
         $editorUser->assignRole($editor);
 
         // Regular user
-        $regularUser = User::firstOrCreate(
+        $regularUser = $userClass::firstOrCreate(
             ['email' => 'user@example.com'],
             [
                 'name' => 'Regular User',

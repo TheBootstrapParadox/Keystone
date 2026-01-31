@@ -2,7 +2,6 @@
 
 namespace BSPDX\Keystone\Console\Commands;
 
-use App\Models\User;
 use BSPDX\Keystone\Console\Commands\Concerns\InteractsWithKeystone;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;

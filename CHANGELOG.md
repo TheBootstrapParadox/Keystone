@@ -9,6 +9,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.0] - 2026-02-XX
+
+### Added
+
+**Optional Built-in User Model**
+- New `KeystoneUser` model with full authentication support (2FA, passkeys, roles, permissions)
+- Configurable primary key type (BigInt or UUID) via `keystone.user.primary_key_type` config
+- Configurable table name via `keystone.user.table_name` config
+- Optional user table migration that only runs when using `KeystoneUser`
+- New `keystone.user.model` config to specify User model class (defaults to host app User)
+- Package now provides a complete "one-stop shop" authentication solution for new projects
+
+**Enhanced Roles & Permissions**
+- Added `title` column to roles table for human-friendly display names (e.g., "Super Administrator" instead of "super-admin")
+- Added `description` column to roles table to document role purpose and scope
+- Added `title` column to permissions table for UI display (e.g., "View Users" instead of "view-users")
+- Added `description` column to permissions table to explain permission purpose
+- Added `getDisplayNameAttribute()` accessor to `KeystoneRole` and `KeystonePermission` models
+- Updated `KeystoneSeeder` to populate title and description fields with helpful defaults
+- Models now use `$fillable` to allow mass assignment of title/description
+
+**Migration Portability Improvements**
+- Migrations now dynamically resolve user table name from auth config (works with custom table names like `id_users`)
+- All user table migrations guard against duplicate columns using `Schema::hasColumn()` checks
+- Migration column guards applied to: `tenant_id`, `two_factor_secret`, `two_factor_recovery_codes`, `two_factor_confirmed_at`, `allow_passkey_login`, `allow_totp_login`, `require_password`
+- Package now compatible with host apps using custom User model namespaces (e.g., `App\Models\Id\User`)
+- Added multi-tenancy support with `tenant_id` column (guarded to prevent duplicates if host app already defines it)
+
+**Documentation**
+- New `docs/USER_MODEL.md` guide explaining User model configuration options
+- Documentation covers migration from host User to KeystoneUser
+- UUID vs BigInt configuration examples
+- Custom table name configuration examples
+
+### Changed
+
+- **Console Commands:** All commands now resolve User model from config instead of hardcoding `App\Models\User`
+- **InteractsWithKeystone Trait:** Added `getUserModel()` helper method for consistent User resolution
+- **KeystoneSeeder:** Now uses config to resolve User model class instead of hardcoded import
+- **RolePermissionController:** Updated to use `Illuminate\Contracts\Auth\Authenticatable` interface instead of hardcoded User class
+- **Migrations:** `add_authkit_fields_to_users_table` and `add_auth_preferences_to_users_table` now use `config('auth.providers.users.model')` for table resolution
+- **Permission Migration:** Updated to include title/description columns in initial schema
+
+### Fixed
+
+- Fixed hardcoded `'users'` table references causing failures with custom table names
+- Fixed duplicate column errors when host app already defines 2FA or auth preference columns
+- Fixed namespace conflicts when host apps use non-standard User model locations
+
+### Migration Guide
+
+**For Existing Keystone Users (0.6.x → 0.7.0):**
+
+No action required! Version 0.7.0 is fully backward compatible. The package defaults to your existing User model behavior.
+
+**Optional:** To add title/description to existing roles and permissions:
+
+1. Run migrations to add new columns:
+```bash
+php artisan migrate
+```
+
+2. Re-run seeder to populate titles/descriptions:
+```bash
+php artisan db:seed --class=KeystoneSeeder
+```
+
+**For New Projects:**
+
+To use the built-in `KeystoneUser` model:
+
+1. Publish config:
+```bash
+php artisan vendor:publish --tag=keystone-config
+```
+
+2. Edit `config/keystone.php`:
+```php
+'user' => [
+    'model' => \BSPDX\Keystone\Models\KeystoneUser::class,
+    'primary_key_type' => 'bigint', // or 'uuid'
+    'table_name' => 'users',
+],
+```
+
+3. Update `config/auth.php`:
+```php
+'providers' => [
+    'users' => [
+        'driver' => 'eloquent',
+        'model' => \BSPDX\Keystone\Models\KeystoneUser::class,
+    ],
+],
+```
+
+4. Run migrations:
+```bash
+php artisan migrate
+php artisan db:seed --class=KeystoneSeeder
+```
+
+**For Custom User Table Names:**
+
+If your app uses a custom user table name (e.g., `id_users`):
+
+```php
+// Your User model
+protected $table = 'id_users';
+```
+
+Keystone 0.7.0+ automatically detects this via `$user->getTable()`. No additional configuration needed!
+
+---
+
 ## [0.6.1] - 2026-01-31
 
 #### Added

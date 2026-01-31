@@ -16,6 +16,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | User Model Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Specify which User model to use. You can use your own User model
+    | or use the built-in KeystoneUser model provided by the package.
+    |
+    */
+
+    'user' => [
+        // User model class to use
+        // Default: null (uses config('auth.providers.users.model'))
+        // Set to \BSPDX\Keystone\Models\KeystoneUser::class to use built-in User
+        'model' => null,
+
+        // Primary key type for KeystoneUser (if using built-in model)
+        // Options: 'bigint' or 'uuid'
+        'primary_key_type' => 'bigint',
+
+        // Table name for KeystoneUser (if using built-in model)
+        'table_name' => 'users',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Authentication Features
     |--------------------------------------------------------------------------
     |
