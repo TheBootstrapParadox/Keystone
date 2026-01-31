@@ -142,12 +142,22 @@ The package configuration is located at `config/keystone.php`. Key settings:
     'passwordless_login' => true,
     'show_permissions' => true,
 
-    // Enable multi-tenant mode (adds tenant_id column to users table)
+    // Enable multi-tenant mode (adds tenant_id column to users, roles, and permissions tables)
     'multi_tenant' => env('KEYSTONE_MULTI_TENANT', false),
 ],
 ```
 
-When `multi_tenant` is enabled, Keystone will add a `tenant_id` UUID column to the users table for tenant isolation.
+When `multi_tenant` is enabled, Keystone will add a nullable `tenant_id` UUID column to:
+- `users` table - for user-level tenant isolation
+- `roles` table - for tenant-scoped roles
+- `permissions` table - for tenant-scoped permissions
+
+**Important:** The `tenant_id` column is nullable. Setting it to `NULL` means the user/role/permission is **global** and accessible across all tenants. This is useful for:
+- System administrators who manage multiple tenants
+- Global roles like "super-admin" that transcend tenant boundaries
+- Shared permissions that apply across all tenants
+
+Unexpected behavior may occur if you mix global and tenant-scoped entities without careful management.
 
 ### RBAC Settings
 

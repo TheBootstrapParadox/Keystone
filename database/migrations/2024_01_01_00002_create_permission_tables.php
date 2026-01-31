@@ -29,18 +29,36 @@ return new class extends Migration
         Schema::create($tableNames['permissions'], static function (Blueprint $table) {
             // $table->engine('InnoDB');
             $table->bigIncrements('id'); // permission id
+
+            // Multi-tenancy support (only if enabled in features)
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->uuid('tenant_id')->nullable()->after('id');
+                $table->index('tenant_id');
+            }
+
             $table->string('name');       // For MyISAM use string('name', 225); // (or 166 for InnoDB with Redundant/Compact row format)
             $table->string('guard_name'); // For MyISAM use string('guard_name', 25);
             $table->string('title')->nullable()->comment('Display name for UI');
             $table->text('description')->nullable()->comment('Explains permission purpose');
             $table->timestamps();
 
-            $table->unique(['name', 'guard_name']);
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->unique(['tenant_id', 'name', 'guard_name']);
+            } else {
+                $table->unique(['name', 'guard_name']);
+            }
         });
 
         Schema::create($tableNames['roles'], static function (Blueprint $table) use ($teams, $columnNames) {
             // $table->engine('InnoDB');
             $table->bigIncrements('id'); // role id
+
+            // Multi-tenancy support (only if enabled in features)
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->uuid('tenant_id')->nullable()->after('id');
+                $table->index('tenant_id');
+            }
+
             if ($teams || config('permission.testing')) { // permission.testing is a fix for sqlite testing
                 $table->unsignedBigInteger($columnNames['team_foreign_key'])->nullable();
                 $table->index($columnNames['team_foreign_key'], 'roles_team_foreign_key_index');
@@ -50,10 +68,19 @@ return new class extends Migration
             $table->string('title')->nullable()->comment('Display name for UI');
             $table->text('description')->nullable()->comment('Explains role purpose and scope');
             $table->timestamps();
-            if ($teams || config('permission.testing')) {
-                $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
+
+            if (config('keystone.features.multi_tenant', false)) {
+                if ($teams || config('permission.testing')) {
+                    $table->unique(['tenant_id', $columnNames['team_foreign_key'], 'name', 'guard_name']);
+                } else {
+                    $table->unique(['tenant_id', 'name', 'guard_name']);
+                }
             } else {
-                $table->unique(['name', 'guard_name']);
+                if ($teams || config('permission.testing')) {
+                    $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
+                } else {
+                    $table->unique(['name', 'guard_name']);
+                }
             }
         });
 

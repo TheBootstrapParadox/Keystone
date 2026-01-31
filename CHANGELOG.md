@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.2] - Unreleased
+
+### Changed
+
+- The nullable `tenant_id` UUID column is now also added to:
+  - `permissions` table for tenant-scoped permissions
+  - `roles` table for tenant-scoped roles
+- `tenant_id` is nullable: `NULL` means global (accessible across all tenants)
+- Unique constraints updated to include `tenant_id` when multi-tenancy is enabled
+---
+
 ## [0.7.1] - 2026-02-01
 
 ### Changed

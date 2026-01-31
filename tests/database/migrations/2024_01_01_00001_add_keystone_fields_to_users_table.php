@@ -9,7 +9,10 @@ return new class extends Migration {
      * Run the migrations.
      */
     public function up(): void {
-        Schema::table('users', function (Blueprint $table) {
+        $authenticatable = config('auth.providers.users.model', \App\Models\User::class);
+        $tableName = (new $authenticatable)->getTable();
+
+        Schema::table($tableName, function (Blueprint $table) {
             // Two-Factor Authentication columns (Fortify)
             $table->text('two_factor_secret')->nullable()->after('password');
             $table->text('two_factor_recovery_codes')->nullable()->after('two_factor_secret');
@@ -24,7 +27,10 @@ return new class extends Migration {
      * Reverse the migrations.
      */
     public function down(): void {
-        Schema::table('users', function (Blueprint $table) {
+                $authenticatable = config('auth.providers.users.model', \App\Models\User::class);
+        $tableName = (new $authenticatable)->getTable();
+
+        Schema::table($tableName, function (Blueprint $table) {
             $table->dropColumn([
                 'two_factor_secret',
                 'two_factor_recovery_codes',
