@@ -53,9 +53,7 @@ class UnassignRoleCommand extends Command
         }
 
         try {
-            foreach ($roles as $role) {
-                $user->removeRole($role);
-            }
+            $this->roleService->removeFromUser($user, $roles);
 
             $this->clearPermissionCache();
             $user->refresh();

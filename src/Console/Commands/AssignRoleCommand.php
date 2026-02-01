@@ -51,9 +51,7 @@ class AssignRoleCommand extends Command
         try {
             if ($this->option('remove')) {
                 // Remove specified roles
-                foreach ($roles as $role) {
-                    $user->removeRole($role);
-                }
+                $this->roleService->removeFromUser($user, $roles);
                 $action = 'removed';
             } elseif ($this->option('sync')) {
                 // Replace all roles
@@ -61,9 +59,7 @@ class AssignRoleCommand extends Command
                 $action = 'synced';
             } else {
                 // Add roles (default behavior)
-                foreach ($roles as $role) {
-                    $user->assignRole($role);
-                }
+                $this->roleService->assignToUser($user, $roles);
                 $action = 'assigned';
             }
 

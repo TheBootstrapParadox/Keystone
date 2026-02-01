@@ -56,4 +56,58 @@ interface PermissionServiceInterface
      * @return Collection
      */
     public function getAllUserPermissions(Authenticatable $user): Collection;
+
+    /**
+     * Find a permission by name.
+     *
+     * @param string $name
+     * @param string $guardName
+     * @param string|null $tenantId
+     * @return KeystonePermission|null
+     */
+    public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystonePermission;
+
+    /**
+     * Get all permissions for a specific tenant.
+     *
+     * @param string|null $tenantId
+     * @return Collection
+     */
+    public function getAllForTenant(?string $tenantId = null): Collection;
+
+    /**
+     * Assign permission(s) directly to a user.
+     *
+     * @param Authenticatable $user
+     * @param string|array $permissions
+     * @return void
+     */
+    public function assignToUser(Authenticatable $user, string|array $permissions): void;
+
+    /**
+     * Remove permission(s) from a user.
+     *
+     * @param Authenticatable $user
+     * @param string|array $permissions
+     * @return void
+     */
+    public function removeFromUser(Authenticatable $user, string|array $permissions): void;
+
+    /**
+     * Assign permission(s) to a role.
+     *
+     * @param \BSPDX\Keystone\Models\KeystoneRole $role
+     * @param string|array $permissions
+     * @return void
+     */
+    public function assignToRole(\BSPDX\Keystone\Models\KeystoneRole $role, string|array $permissions): void;
+
+    /**
+     * Remove permission(s) from a role.
+     *
+     * @param \BSPDX\Keystone\Models\KeystoneRole $role
+     * @param string|array $permissions
+     * @return void
+     */
+    public function removeFromRole(\BSPDX\Keystone\Models\KeystoneRole $role, string|array $permissions): void;
 }

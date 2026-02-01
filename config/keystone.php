@@ -219,7 +219,7 @@ return [
              * foreign key is other than `team_id`.
              */
 
-            'team_foreign_key' => 'team_id',
+            'team_foreign_key' => 'tenant_id',
         ],
 
         /*
@@ -255,9 +255,12 @@ return [
          * If you already did the migration then you must make a new migration to also
          * add 'team_foreign_key' to 'roles', 'model_has_roles', and 'model_has_permissions'
          * (view the latest version of this package's migration file)
+         *
+         * NOTE: Keystone consolidates this with multi_tenant feature by using tenant_id
+         * as the team_foreign_key. This is automatically enabled when multi_tenant is true.
          */
 
-        'teams' => false,
+        'teams' => config('keystone.features.multi_tenant', false),
 
         /*
          * When set to true, migrations enable a SQLite-friendly workaround.
@@ -266,8 +269,10 @@ return [
 
         /*
          * The class to use to resolve the permissions team id
+         *
+         * NOTE: Keystone uses TenantTeamResolver to return tenant_id instead of team_id
          */
-        'team_resolver' => \Spatie\Permission\DefaultTeamResolver::class,
+        'team_resolver' => \BSPDX\Keystone\Support\TenantTeamResolver::class,
 
         /*
          * Passport Client Credentials Grant

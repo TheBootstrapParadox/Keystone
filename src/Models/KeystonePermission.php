@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Spatie\Permission\Models\Permission;
 
@@ -20,7 +21,34 @@ class KeystonePermission extends Permission
      *
      * @var array<int, string>
      */
-    protected $fillable = ['name', 'guard_name', 'title', 'description'];
+    protected $fillable = ['name', 'guard_name', 'title', 'description', 'tenant_id'];
+
+    /**
+     * The "booted" method of the model.
+     *
+     * @return void
+     */
+    protected static function booted(): void
+    {
+        parent::booted();
+
+        // Add global scope for tenant isolation when multi-tenancy is enabled
+        static::addGlobalScope('tenant', function (Builder $query) {
+            if (config('keystone.features.multi_tenant', false) && auth()->check() && auth()->user()->tenant_id) {
+                $query->where(function ($q) {
+                    $q->where('tenant_id', auth()->user()->tenant_id)
+                      ->orWhereNull('tenant_id'); // Allow access to global permissions (tenant_id = null)
+                });
+            }
+        });
+
+        // Auto-set tenant_id when creating permissions
+        static::creating(function ($permission) {
+            if (config('keystone.features.multi_tenant', false) && auth()->check() && !isset($permission->tenant_id)) {
+                $permission->tenant_id = auth()->user()->tenant_id;
+            }
+        });
+    }
 
     /**
      * Get display name (title if available, otherwise name).
@@ -30,5 +58,17 @@ class KeystonePermission extends Permission
     public function getDisplayNameAttribute(): string
     {
         return $this->title ?? $this->name;
+    }
+
+    /**
+     * Scope a query to exclude the tenant scope.
+     * Use sparingly and only for super-admin operations.
+     *
+     * @param Builder $query
+     * @return Builder
+     */
+    public function scopeWithoutTenant(Builder $query): Builder
+    {
+        return $query->withoutGlobalScope('tenant');
     }
 }

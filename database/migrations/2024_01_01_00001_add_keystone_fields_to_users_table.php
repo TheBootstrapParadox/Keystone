@@ -13,7 +13,10 @@ return new class extends Migration {
         $authenticatable = config('auth.providers.users.model', \App\Models\User::class);
         $tableName = (new $authenticatable)->getTable();
 
-        Schema::table($tableName, function (Blueprint $table) use ($tableName) {
+        // Detect if the authenticatable model uses UUIDs
+        $useUuids = config('keystone.user.primary_key_type') === 'uuid';
+
+        Schema::table($tableName, function (Blueprint $table) use ($tableName, $useUuids) {
             // Two-Factor Authentication columns (Fortify)
             if (!Schema::hasColumn($tableName, 'two_factor_secret')) {
                 $table->text('two_factor_secret')->nullable()->after('password');
@@ -27,7 +30,11 @@ return new class extends Migration {
 
             // Multi-tenancy support (only if enabled in features)
             if (config('keystone.features.multi_tenant', false) && !Schema::hasColumn($tableName, 'tenant_id')) {
-                $table->uuid('tenant_id')->nullable()->after('id');
+                if ($useUuids) {
+                    $table->uuid('tenant_id')->nullable()->after('id');
+                } else {
+                    $table->unsignedBigInteger('tenant_id')->nullable()->after('id');
+                }
                 $table->index('tenant_id');
             }
         });

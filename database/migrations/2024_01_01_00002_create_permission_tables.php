@@ -26,13 +26,17 @@ return new class extends Migration
         throw_if(empty($tableNames), Exception::class, 'Error: config/keystone.php not loaded. Run [php artisan config:clear] and try again.');
         throw_if($teams && empty($columnNames['team_foreign_key'] ?? null), Exception::class, 'Error: team_foreign_key on config/keystone.php not loaded. Run [php artisan config:clear] and try again.');
 
-        Schema::create($tableNames['permissions'], static function (Blueprint $table) {
+        Schema::create($tableNames['permissions'], static function (Blueprint $table) use ($useUuids) {
             // $table->engine('InnoDB');
             $table->bigIncrements('id'); // permission id
 
             // Multi-tenancy support (only if enabled in features)
             if (config('keystone.features.multi_tenant', false)) {
-                $table->uuid('tenant_id')->nullable()->after('id');
+                if ($useUuids) {
+                    $table->uuid('tenant_id')->nullable();
+                } else {
+                    $table->unsignedBigInteger('tenant_id')->nullable();
+                }
                 $table->index('tenant_id');
             }
 
@@ -49,13 +53,17 @@ return new class extends Migration
             }
         });
 
-        Schema::create($tableNames['roles'], static function (Blueprint $table) use ($teams, $columnNames) {
+        Schema::create($tableNames['roles'], static function (Blueprint $table) use ($teams, $columnNames, $useUuids) {
             // $table->engine('InnoDB');
             $table->bigIncrements('id'); // role id
 
             // Multi-tenancy support (only if enabled in features)
             if (config('keystone.features.multi_tenant', false)) {
-                $table->uuid('tenant_id')->nullable()->after('id');
+                if ($useUuids) {
+                    $table->uuid('tenant_id')->nullable();
+                } else {
+                    $table->unsignedBigInteger('tenant_id')->nullable();
+                }
                 $table->index('tenant_id');
             }
 

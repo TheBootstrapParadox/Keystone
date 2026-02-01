@@ -9,7 +9,132 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.7.2] - Unreleased
+## [0.8.0] - Unreleased
+
+### Added
+
+**Service Layer Abstraction**
+- New `CacheServiceInterface` and `CacheService` to abstract Spatie's `PermissionRegistrar`
+- New `TenantTeamResolver` for Spatie's team scoping that returns `tenant_id` instead of `team_id`
+- Expanded `RoleServiceInterface` with methods: `findByName()`, `getAllForTenant()`, `assignToUser()`, `removeFromUser()`, `clearCache()`
+- Expanded `PermissionServiceInterface` with methods: `findByName()`, `getAllForTenant()`, `assignToUser()`, `removeFromUser()`, `assignToRole()`, `removeFromRole()`
+- Expanded `AuthorizationServiceInterface` with methods: `userHasAnyRole()`, `userHasAllRoles()`, `userHasAnyPermission()`, `userHasAllPermissions()`, `userHasDirectPermission()`
+- All expanded service methods implemented with full tenant awareness
+- `CacheService` registered as singleton in service container with `keystone.cache` alias
+
+**Multi-Tenancy Enhancement**
+- New migration `2024_01_01_00003_add_tenant_id_to_pivot_tables.php` adds `tenant_id` to pivot tables
+- `tenant_id` now added to `model_has_roles` and `model_has_permissions` pivot tables when multi-tenancy is enabled
+- Automatic backfilling of `tenant_id` in pivot tables from user records
+- Global tenant scopes added to `KeystoneRole` and `KeystonePermission` models
+- Auto-population of `tenant_id` when creating roles/permissions
+- `scopeWithoutTenant()` helper method for super-admin operations
+- Global roles/permissions supported via `tenant_id = NULL` (accessible across all tenants)
+
+### Changed
+
+**Team/Tenant Consolidation**
+- `team_foreign_key` changed from `'team_id'` to `'tenant_id'` in configuration
+- Spatie's `teams` feature now dynamically enabled based on `keystone.features.multi_tenant` setting
+- `team_resolver` now uses `BSPDX\Keystone\Support\TenantTeamResolver` instead of Spatie's default
+- Single `tenant_id` column now serves both multi-tenant isolation AND Spatie's team scoping
+
+**Primary Key Type Detection**
+- `tenant_id` columns now respect `keystone.user.primary_key_type` configuration (UUID or bigint)
+- Migration `2024_01_01_00001_add_keystone_fields_to_users_table` now conditionally creates UUID or bigint `tenant_id`
+- Migration `2024_01_01_00002_create_permission_tables` now uses `$useUuids` variable for `tenant_id` columns
+- Migration `2024_01_01_00003_add_tenant_id_to_pivot_tables` detects and respects UUID vs bigint type
+
+**Service Layer Usage**
+- `HasKeystone` trait methods now delegate to service layer:
+  - `requires2FA()` uses `AuthorizationService::userHasAnyRole()`
+  - `requiresPasskey()` uses `AuthorizationService::userHasAnyRole()`
+  - `isSuperAdmin()` uses `AuthorizationService::userHasRole()`
+- Middleware now inject and use `AuthorizationService`:
+  - `EnsureHasRole` uses `AuthorizationService::userHasAnyRole()`
+  - `EnsureHasPermission` uses `AuthorizationService::userHasAnyPermission()`
+- Console commands refactored to use service layer:
+  - `AssignRoleCommand` uses `RoleService::assignToUser()` / `removeFromUser()`
+  - `UnassignRoleCommand` uses `RoleService::removeFromUser()`
+  - `AssignPermissionCommand` uses `PermissionService` methods
+  - `UnassignPermissionCommand` uses `PermissionService` methods
+  - `InteractsWithKeystone` trait uses `CacheService::clearPermissionCache()`
+
+**Model Enhancements**
+- `KeystoneRole` and `KeystonePermission` now include `tenant_id` in `$fillable`
+- Both models now have global tenant scopes that automatically filter by authenticated user's tenant
+- Both models auto-set `tenant_id` on creation when multi-tenancy is enabled
+- Both models provide `scopeWithoutTenant()` for super-admin bypass
+
+### Fixed
+
+- `tenant_id` columns now properly respect user model's primary key type across all migrations
+- Eliminated direct Spatie method calls throughout Keystone codebase
+- Service layer now provides complete abstraction over Spatie functionality
+
+### Breaking Changes
+
+**For Multi-Tenant Installations**
+- New migration adds `tenant_id` to pivot tables (requires running migrations)
+- Role/permission assignments will be tenant-scoped after migration
+- Existing assignments automatically backfilled with user's `tenant_id`
+
+**For All Installations**
+- Configuration: `team_foreign_key` changed from `'team_id'` to `'tenant_id'`
+- Configuration: `teams` now dynamic based on `multi_tenant` feature flag (was `false`)
+- Configuration: `team_resolver` now uses `TenantTeamResolver` (was Spatie's default)
+
+### Migration Guide
+
+**For Existing Keystone Users (0.7.x → 0.8.0):**
+
+1. **Update configuration** (automatic via package):
+   - `team_foreign_key` automatically updated to `'tenant_id'`
+   - `teams` feature now enabled when `multi_tenant` is true
+   - Custom `TenantTeamResolver` now in use
+
+2. **Run new migrations**:
+   ```bash
+   php artisan migrate
+   ```
+   This will add `tenant_id` to pivot tables and backfill existing data.
+
+3. **Clear caches**:
+   ```bash
+   php artisan config:clear
+   php artisan cache:clear
+   ```
+
+4. **Optional - Update your code** to use service layer:
+   ```php
+   // Old way (still works but deprecated)
+   $user->assignRole('admin');
+
+   // New recommended way
+   app(RoleServiceInterface::class)->assignToUser($user, 'admin');
+   ```
+
+**For Non-Multi-Tenant Installations:**
+- No action required! All changes are guarded by the `multi_tenant` feature flag.
+- Your installation remains unchanged and backward compatible.
+
+**Testing Multi-Tenancy:**
+1. Enable multi-tenancy in config or `.env`:
+   ```env
+   KEYSTONE_MULTI_TENANT=true
+   ```
+
+2. Verify tenant isolation:
+   - Create users with different `tenant_id` values
+   - Create roles/permissions for each tenant
+   - Confirm users only see their tenant's resources
+
+3. Test super-admin bypass:
+   - Super-admins should have access across all tenants
+
+---
+
+## [0.7.2] - 2026-02-01
 
 ### Changed
 

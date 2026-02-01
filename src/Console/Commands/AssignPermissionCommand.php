@@ -85,13 +85,13 @@ class AssignPermissionCommand extends Command
 
         try {
             if ($this->option('remove')) {
-                $role->revokePermissionTo($permissions);
+                $this->permissionService->removeFromRole($role, $permissions);
                 $action = 'removed from';
             } elseif ($this->option('sync')) {
                 $this->roleService->syncPermissions($role, $permissions);
                 $action = 'synced to';
             } else {
-                $role->givePermissionTo($permissions);
+                $this->permissionService->assignToRole($role, $permissions);
                 $action = 'assigned to';
             }
 
@@ -137,13 +137,13 @@ class AssignPermissionCommand extends Command
 
         try {
             if ($this->option('remove')) {
-                $user->revokePermissionTo($permissions);
+                $this->permissionService->removeFromUser($user, $permissions);
                 $action = 'removed from';
             } elseif ($this->option('sync')) {
                 $this->permissionService->syncToUser($user, $permissions);
                 $action = 'synced to';
             } else {
-                $user->givePermissionTo($permissions);
+                $this->permissionService->assignToUser($user, $permissions);
                 $action = 'assigned to';
             }
 

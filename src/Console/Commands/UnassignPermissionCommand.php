@@ -89,7 +89,7 @@ class UnassignPermissionCommand extends Command
         }
 
         try {
-            $role->revokePermissionTo($permissions);
+            $this->permissionService->removeFromRole($role, $permissions);
 
             $this->clearPermissionCache();
             $role->refresh();
@@ -148,7 +148,7 @@ class UnassignPermissionCommand extends Command
         }
 
         try {
-            $user->revokePermissionTo($permissions);
+            $this->permissionService->removeFromUser($user, $permissions);
 
             $this->clearPermissionCache();
 

@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        php: [8.4]
+        php: [8.2, 8.3, 8.4]
 
     name: PHP ${{ matrix.php }}
 
@@ -41,8 +41,10 @@ jobs:
       - name: Copy environment file
         run: cp .env.example .env
 
-      - name: Generate app key
-        run: php artisan key:generate
+      - name: Run migrations
+        run: php artisan migrate --force
 
       - name: Execute tests
         run: php vendor/bin/phpunit
+        env:
+          CACHE_STORE: array

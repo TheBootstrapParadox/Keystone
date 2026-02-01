@@ -42,7 +42,8 @@ trait HasKeystone
             return false;
         }
 
-        return $this->hasAnyRole($requiredRoles);
+        return app(\BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface::class)
+            ->userHasAnyRole($this, $requiredRoles);
     }
 
     /**
@@ -56,7 +57,8 @@ trait HasKeystone
             return false;
         }
 
-        return $this->hasAnyRole($requiredRoles);
+        return app(\BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface::class)
+            ->userHasAnyRole($this, $requiredRoles);
     }
 
     /**
@@ -78,7 +80,8 @@ trait HasKeystone
     {
         $superAdminRole = config('keystone.rbac.super_admin_role', 'super-admin');
 
-        return $this->hasRole($superAdminRole);
+        return app(\BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface::class)
+            ->userHasRole($this, $superAdminRole);
     }
 
     /**

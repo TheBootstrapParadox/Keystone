@@ -39,6 +39,11 @@ class KeystoneServiceProvider extends ServiceProvider {
             \BSPDX\Keystone\Services\AuthorizationService::class
         );
 
+        $this->app->singleton(
+            \BSPDX\Keystone\Services\Contracts\CacheServiceInterface::class,
+            \BSPDX\Keystone\Services\CacheService::class
+        );
+
         // Register convenient aliases
         $this->app->alias(
             \BSPDX\Keystone\Services\Contracts\PasskeyServiceInterface::class,
@@ -58,6 +63,11 @@ class KeystoneServiceProvider extends ServiceProvider {
         $this->app->alias(
             \BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface::class,
             'keystone.authorization'
+        );
+
+        $this->app->alias(
+            \BSPDX\Keystone\Services\Contracts\CacheServiceInterface::class,
+            'keystone.cache'
         );
     }
 

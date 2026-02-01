@@ -49,4 +49,47 @@ interface RoleServiceInterface
      * @return Collection
      */
     public function getUserRoles(Authenticatable $user): Collection;
+
+    /**
+     * Find a role by name.
+     *
+     * @param string $name
+     * @param string $guardName
+     * @param string|null $tenantId
+     * @return KeystoneRole|null
+     */
+    public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystoneRole;
+
+    /**
+     * Get all roles for a specific tenant.
+     *
+     * @param string|null $tenantId
+     * @return Collection
+     */
+    public function getAllForTenant(?string $tenantId = null): Collection;
+
+    /**
+     * Assign role(s) to a user.
+     *
+     * @param Authenticatable $user
+     * @param string|array $roles
+     * @return void
+     */
+    public function assignToUser(Authenticatable $user, string|array $roles): void;
+
+    /**
+     * Remove role(s) from a user.
+     *
+     * @param Authenticatable $user
+     * @param string|array $roles
+     * @return void
+     */
+    public function removeFromUser(Authenticatable $user, string|array $roles): void;
+
+    /**
+     * Clear the role and permission cache.
+     *
+     * @return void
+     */
+    public function clearCache(): void;
 }

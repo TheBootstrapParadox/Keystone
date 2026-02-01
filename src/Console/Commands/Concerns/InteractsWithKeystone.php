@@ -2,7 +2,7 @@
 
 namespace BSPDX\Keystone\Console\Commands\Concerns;
 
-use Spatie\Permission\PermissionRegistrar;
+use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
 
 trait InteractsWithKeystone
 {
@@ -67,7 +67,7 @@ trait InteractsWithKeystone
      */
     protected function clearPermissionCache(): void
     {
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        app(CacheServiceInterface::class)->clearPermissionCache();
     }
 
     /**

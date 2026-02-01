@@ -2,9 +2,10 @@
 
 namespace Tests\Unit;
 
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\User;
-use Spatie\Permission\Models\Role;
+use BSPDX\Keystone\Models\KeystoneRole;
 
 class HasKeystoneTraitTest extends TestCase
 {
@@ -12,11 +13,14 @@ class HasKeystoneTraitTest extends TestCase
     {
         parent::setUp();
 
-        // Clear permission cache
-        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+        // Ensure Spatie Permission uses array cache in tests
+        config(['keystone.permission.cache.store' => 'array']);
+
+        // Clear permission cache using Keystone's cache service
+        app(\BSPDX\Keystone\Services\Contracts\CacheServiceInterface::class)->clearPermissionCache();
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_two_factor_is_enabled()
     {
         $user = User::factory()->create();
@@ -31,7 +35,7 @@ class HasKeystoneTraitTest extends TestCase
         $this->assertTrue($user->hasTwoFactorEnabled());
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_false_when_two_factor_secret_is_null()
     {
         $user = User::factory()->create([
@@ -42,7 +46,7 @@ class HasKeystoneTraitTest extends TestCase
         $this->assertFalse($user->hasTwoFactorEnabled());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_passkeys_are_registered()
     {
         $user = User::factory()->create();
@@ -50,13 +54,13 @@ class HasKeystoneTraitTest extends TestCase
         $this->assertFalse($user->hasPasskeysRegistered());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_two_factor_is_required()
     {
         config(['keystone.two_factor.required_for_roles' => ['admin']]);
 
         $user = User::factory()->create();
-        $adminRole = Role::create(['name' => 'admin']);
+        $adminRole = KeystoneRole::create(['name' => 'admin']);
 
         $this->assertFalse($user->requires2FA());
 
@@ -65,25 +69,25 @@ class HasKeystoneTraitTest extends TestCase
         $this->assertTrue($user->requires2FA());
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_false_when_no_roles_require_two_factor()
     {
         config(['keystone.two_factor.required_for_roles' => []]);
 
         $user = User::factory()->create();
-        $adminRole = Role::create(['name' => 'admin']);
+        $adminRole = KeystoneRole::create(['name' => 'admin']);
         $user->assignRole($adminRole);
 
         $this->assertFalse($user->requires2FA());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_passkey_is_required()
     {
         config(['keystone.passkey.required_for_roles' => ['admin']]);
 
         $user = User::factory()->create();
-        $adminRole = Role::create(['name' => 'admin']);
+        $adminRole = KeystoneRole::create(['name' => 'admin']);
 
         $this->assertFalse($user->requiresPasskey());
 
@@ -92,7 +96,7 @@ class HasKeystoneTraitTest extends TestCase
         $this->assertTrue($user->requiresPasskey());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_get_authentication_methods()
     {
         $user = User::factory()->create();
@@ -105,13 +109,13 @@ class HasKeystoneTraitTest extends TestCase
         $this->assertArrayHasKey('passkey', $methods);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_identify_super_admin()
     {
         config(['keystone.rbac.super_admin_role' => 'super-admin']);
 
         $user = User::factory()->create();
-        $superAdminRole = Role::create(['name' => 'super-admin']);
+        $superAdminRole = KeystoneRole::create(['name' => 'super-admin']);
 
         $this->assertFalse($user->isSuperAdmin());
 
@@ -120,11 +124,11 @@ class HasKeystoneTraitTest extends TestCase
         $this->assertTrue($user->isSuperAdmin());
     }
 
-    /** @test */
+    #[Test]
     public function it_can_check_if_user_can_bypass_permissions()
     {
         $user = User::factory()->create();
-        $superAdminRole = Role::create(['name' => 'super-admin']);
+        $superAdminRole = KeystoneRole::create(['name' => 'super-admin']);
 
         $this->assertFalse($user->canBypassPermissions());
 
