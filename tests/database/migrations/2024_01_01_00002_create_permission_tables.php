@@ -125,9 +125,16 @@ return new class extends Migration
             $table->primary([$pivotPermission, $pivotRole], 'role_has_permissions_permission_id_role_id_primary');
         });
 
-        app('cache')
-            ->store(config('keystone.permission.cache.store') != 'default' ? config('keystone.permission.cache.store') : null)
-            ->forget(config('keystone.permission.cache.key'));
+        $cacheStore = config('keystone.permission.cache.store');
+        $resolvedStore = $cacheStore !== 'default' ? $cacheStore : null;
+        $isDatabaseStore = $resolvedStore === 'database'
+            || ($resolvedStore === null && config('cache.default') === 'database');
+
+        if (! $isDatabaseStore || Schema::hasTable(config('cache.stores.database.table', 'cache'))) {
+            app('cache')
+                ->store($resolvedStore)
+                ->forget(config('keystone.permission.cache.key'));
+        }
     }
 
     /**
