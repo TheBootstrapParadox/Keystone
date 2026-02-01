@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unique constraints updated to include `tenant_id` when multi-tenancy is enabled
 - Consolidated Spatie Permission configuration into `config/keystone.php` under `permission`
 - Permission table migrations now read from `keystone.permission` instead of `permission`
+- Permission migration cache flush now skips database cache store when the cache table is missing (avoids SQLite migration failures)
 ---
 
 ## [0.7.1] - 2026-02-01
