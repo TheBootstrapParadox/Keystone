@@ -155,16 +155,8 @@ class KeystoneServiceProvider extends ServiceProvider {
             });
         }
 
-        // Register multi-tenant support for Spatie Permission
-        if (config('keystone.features.multi_tenant', false)) {
-            $this->app->booted(function () {
-                if (class_exists(\Spatie\Permission\PermissionRegistrar::class)) {
-                    app(\Spatie\Permission\PermissionRegistrar::class)
-                        ->setPermissionsTeamId(function () {
-                            return auth()->check() ? auth()->user()->tenant_id : null;
-                        });
-                }
-            });
-        }
+        // NOTE: Multi-tenant support is handled via global scopes on KeystoneRole and KeystonePermission models
+        // instead of using Spatie's teams feature. This avoids ambiguous column errors when both roles and
+        // pivot tables have tenant_id columns, allowing roles to be optionally tenant-specific.
     }
 }

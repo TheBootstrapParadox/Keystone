@@ -57,7 +57,7 @@ return new class extends Migration
             // $table->engine('InnoDB');
             $table->bigIncrements('id'); // role id
 
-            // Multi-tenancy support (only if enabled in features)
+            // Multi-tenancy support: Roles can be global (tenant_id = NULL) or tenant-specific
             if (config('keystone.features.multi_tenant', false)) {
                 if ($useUuids) {
                     $table->uuid('tenant_id')->nullable();
@@ -67,28 +67,17 @@ return new class extends Migration
                 $table->index('tenant_id');
             }
 
-            // Add team_foreign_key if teams are enabled AND it's different from tenant_id
-            // (to avoid duplicate column when multi_tenant uses tenant_id as team_foreign_key)
-            if (($teams || config('keystone.permission.testing')) &&
-                !(config('keystone.features.multi_tenant', false) && $columnNames['team_foreign_key'] === 'tenant_id')) {
-                $table->unsignedBigInteger($columnNames['team_foreign_key'])->nullable();
-                $table->index($columnNames['team_foreign_key'], 'roles_team_foreign_key_index');
-            }
             $table->string('name');       // For MyISAM use string('name', 225); // (or 166 for InnoDB with Redundant/Compact row format)
             $table->string('guard_name'); // For MyISAM use string('guard_name', 25);
             $table->string('title')->nullable()->comment('Display name for UI');
             $table->text('description')->nullable()->comment('Explains role purpose and scope');
             $table->timestamps();
 
-            // When multi-tenant and team_foreign_key both use tenant_id, only include it once in unique constraint
+            // Unique constraint includes tenant_id when multi-tenant is enabled
             if (config('keystone.features.multi_tenant', false)) {
                 $table->unique(['tenant_id', 'name', 'guard_name']);
             } else {
-                if ($teams || config('keystone.permission.testing')) {
-                    $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
-                } else {
-                    $table->unique(['name', 'guard_name']);
-                }
+                $table->unique(['name', 'guard_name']);
             }
         });
 
