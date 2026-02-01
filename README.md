@@ -147,17 +147,32 @@ The package configuration is located at `config/keystone.php`. Key settings:
 ],
 ```
 
-When `multi_tenant` is enabled, Keystone will add a nullable `tenant_id` UUID column to:
-- `users` table - for user-level tenant isolation
-- `roles` table - for tenant-scoped roles
-- `permissions` table - for tenant-scoped permissions
+When `multi_tenant` is enabled, Keystone will add a nullable `tenant_id` column to users, roles, permissions, and pivot tables. Keystone uses **global scopes** for automatic tenant isolation (not Spatie's teams feature).
 
-**Important:** The `tenant_id` column is nullable. Setting it to `NULL` means the user/role/permission is **global** and accessible across all tenants. This is useful for:
-- System administrators who manage multiple tenants
-- Global roles like "super-admin" that transcend tenant boundaries
-- Shared permissions that apply across all tenants
+**Key Features:**
+- **Automatic Filtering** - Authenticated users only see roles/permissions for their tenant
+- **Global Roles/Permissions** - Set `tenant_id = NULL` for cross-tenant access
+- **UUID Support** - Works with both UUID and bigint tenant IDs
+- **Super-Admin Bypass** - Use `::withoutTenant()` for cross-tenant operations
 
-Unexpected behavior may occur if you mix global and tenant-scoped entities without careful management.
+**Example:**
+
+```php
+use BSPDX\Keystone\Models\KeystoneRole;
+
+// Create global role (accessible to all tenants)
+$superAdmin = KeystoneRole::withoutTenant()->create([
+    'name' => 'super_administrator',
+    'tenant_id' => null,
+]);
+
+// Create tenant-specific role (auto-scoped)
+Auth::login($userInTenantA);
+$manager = KeystoneRole::create(['name' => 'manager']);
+// tenant_id automatically populated from auth()->user()->tenant_id
+```
+
+See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architecture, usage examples, and migration guides.
 
 ### RBAC Settings
 
@@ -521,6 +536,98 @@ All type hints use these Keystone models, providing a consistent `BSPDX\Keystone
 - **Flexibility** - Easy to swap implementations or add caching/logging
 - **Clean API** - No third-party classes in your controllers
 - **Optional UI** - Blade components included but completely optional
+
+## Multi-Tenancy
+
+Keystone provides comprehensive multi-tenant support using **global scopes** for automatic tenant isolation. Roles and permissions can be global (accessible across all tenants) or tenant-specific (isolated per organization).
+
+### Quick Start
+
+Enable multi-tenancy in your `.env`:
+
+```env
+KEYSTONE_MULTI_TENANT=true
+```
+
+### Features
+
+- **Automatic Tenant Filtering** - Global scopes automatically filter roles/permissions by authenticated user's tenant
+- **Global Roles/Permissions** - Set `tenant_id = NULL` to make roles/permissions accessible across all tenants
+- **Tenant-Specific Roles** - Roles with `tenant_id` are isolated to a single organization
+- **UUID Support** - Works with both UUID and bigint tenant IDs
+- **Super-Admin Bypass** - Use `::withoutTenant()` scope for cross-tenant operations
+
+### Usage Examples
+
+#### Creating Global Roles
+
+```php
+use BSPDX\Keystone\Models\KeystoneRole;
+
+// Create a global role accessible to all tenants
+$superAdmin = KeystoneRole::withoutTenant()->create([
+    'name' => 'super_administrator',
+    'title' => 'Super Administrator',
+    'tenant_id' => null,  // Global role
+]);
+```
+
+#### Creating Tenant-Specific Roles
+
+```php
+// tenant_id is auto-populated from authenticated user
+Auth::login($userInTenantA);
+
+$manager = KeystoneRole::create([
+    'name' => 'department_manager',
+    'title' => 'Department Manager',
+    // tenant_id automatically set from auth()->user()->tenant_id
+]);
+```
+
+#### Super-Admin Operations
+
+```php
+use BSPDX\Keystone\Facades\Keystone;
+
+// View all roles across all tenants
+$allRoles = KeystoneRole::withoutTenant()->get();
+
+// Check if user can bypass tenant filtering
+if (Keystone::canBypassPermissions($user)) {
+    // User is super-admin
+}
+```
+
+### Tenant Management Commands
+
+Keystone provides artisan commands for managing tenants:
+
+```bash
+# List all tenants with statistics
+php artisan keystone:list-tenants
+
+# Show detailed information for a specific tenant
+php artisan keystone:show-tenant {tenant_id}
+
+# List roles for a specific tenant
+php artisan keystone:list-roles --tenant={tenant_id}
+
+# Create a tenant-specific role
+php artisan keystone:create-role manager --tenant={tenant_id}
+
+# Assign role to user within tenant context
+php artisan keystone:assign-role admin --user={user_id} --tenant={tenant_id}
+```
+
+**Note:** Role and permission commands require tenant IDs when multi-tenancy is enabled.
+
+### Learn More
+
+For comprehensive documentation on multi-tenancy:
+- [Multi-Tenancy Architecture](docs/multi-tenancy.md) - Global scopes vs Spatie teams
+- [Multi-Tenant Usage Examples](docs/examples/multi-tenant-usage.md) - Common patterns and best practices
+- Migration guides for upgrading from single-tenant to multi-tenant
 
 ## HTTPS Setup
 

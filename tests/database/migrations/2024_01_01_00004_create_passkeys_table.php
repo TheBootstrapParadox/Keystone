@@ -10,15 +10,25 @@ return new class extends Migration
     public function up()
     {
         $authenticatableClass = PasskeyConfig::getAuthenticatableModel();
+        $authenticatable = new $authenticatableClass;
+        $authenticatableTableName = $authenticatable->getTable();
 
-        $authenticatableTableName = (new $authenticatableClass)->getTable();
+        // Detect if user model uses UUIDs
+        $useUuids = method_exists($authenticatable, 'uniqueIds') && count($authenticatable->uniqueIds()) > 0;
 
-        Schema::create('passkeys', function (Blueprint $table) use ($authenticatableTableName,$authenticatableClass) {
+        Schema::create('passkeys', function (Blueprint $table) use ($authenticatableTableName, $useUuids) {
             $table->id();
 
-            $table
-                ->foreignIdFor($authenticatableClass, 'authenticatable_id')
-                ->constrained(table: $authenticatableTableName, indexName: 'passkeys_authenticatable_fk')
+            // Use UUID or bigInteger depending on user model
+            if ($useUuids) {
+                $table->uuid('authenticatable_id');
+            } else {
+                $table->unsignedBigInteger('authenticatable_id');
+            }
+
+            $table->foreign('authenticatable_id', 'passkeys_authenticatable_fk')
+                ->references('id')
+                ->on($authenticatableTableName)
                 ->cascadeOnDelete();
 
             $table->text('name');
@@ -28,5 +38,10 @@ return new class extends Migration
             $table->timestamp('last_used_at')->nullable();
             $table->timestamps();
         });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('passkeys');
     }
 };

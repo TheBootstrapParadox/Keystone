@@ -3,10 +3,11 @@
 namespace BSPDX\Keystone;
 
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Route;
+use Illuminate\Contracts\Auth\Access\Gate;
 use BSPDX\Keystone\Http\Middleware\EnsureHasRole;
 use BSPDX\Keystone\Http\Middleware\EnsureHasPermission;
 use BSPDX\Keystone\Http\Middleware\EnsureTwoFactorEnabled;
+use BSPDX\Keystone\Services\PermissionRegistrar;
 
 class KeystoneServiceProvider extends ServiceProvider {
     /**
@@ -44,6 +45,9 @@ class KeystoneServiceProvider extends ServiceProvider {
             \BSPDX\Keystone\Services\CacheService::class
         );
 
+        // Register PermissionRegistrar for Gate integration
+        $this->app->singleton(PermissionRegistrar::class);
+
         // Register convenient aliases
         $this->app->alias(
             \BSPDX\Keystone\Services\Contracts\PasskeyServiceInterface::class,
@@ -68,6 +72,11 @@ class KeystoneServiceProvider extends ServiceProvider {
         $this->app->alias(
             \BSPDX\Keystone\Services\Contracts\CacheServiceInterface::class,
             'keystone.cache'
+        );
+
+        $this->app->alias(
+            PermissionRegistrar::class,
+            'keystone.permission.registrar'
         );
     }
 
@@ -155,8 +164,33 @@ class KeystoneServiceProvider extends ServiceProvider {
             });
         }
 
-        // NOTE: Multi-tenant support is handled via global scopes on KeystoneRole and KeystonePermission models
-        // instead of using Spatie's teams feature. This avoids ambiguous column errors when both roles and
-        // pivot tables have tenant_id columns, allowing roles to be optionally tenant-specific.
+        // Register permissions with Laravel Gate
+        // This enables @can('permission.name') in Blade and Gate::allows() in controllers
+        $this->registerPermissionsWithGate();
+    }
+
+    /**
+     * Register all permissions with Laravel's Gate system.
+     *
+     * @return void
+     */
+    protected function registerPermissionsWithGate(): void
+    {
+        // Register permissions with Gate
+        // Skip only during migrations/install, but allow during tests
+        $isRunningTests = $this->app->environment('testing') || $this->app->runningUnitTests();
+        $shouldRegister = !$this->app->runningInConsole() || $isRunningTests;
+
+        if ($shouldRegister) {
+            try {
+                $permissionRegistrar = $this->app->make(PermissionRegistrar::class);
+                $gate = $this->app->make(Gate::class);
+
+                $permissionRegistrar->registerPermissions($gate);
+            } catch (\Exception $e) {
+                // Silently fail during package installation or when tables don't exist yet
+                // This prevents errors during initial setup
+            }
+        }
     }
 }

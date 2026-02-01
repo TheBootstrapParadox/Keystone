@@ -3,12 +3,12 @@
 namespace BSPDX\Keystone\Services;
 
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
-use Spatie\Permission\PermissionRegistrar;
+use BSPDX\Keystone\Services\PermissionRegistrar;
 
 class CacheService implements CacheServiceInterface
 {
     /**
-     * The Spatie permission registrar instance.
+     * The Keystone permission registrar instance.
      *
      * @var PermissionRegistrar
      */

@@ -12,129 +12,161 @@ return new class extends Migration
      */
     public function up(): void
     {
-        $teams = config('keystone.permission.teams');
-        $tableNames = config('keystone.permission.table_names');
-        $columnNames = config('keystone.permission.column_names');
-        $pivotRole = $columnNames['role_pivot_key'] ?? 'role_id';
-        $pivotPermission = $columnNames['permission_pivot_key'] ?? 'permission_id';
-
         // Detect if the authenticatable model uses UUIDs by checking for the HasUuids trait
         $authenticatableClass = PasskeyConfig::getAuthenticatableModel();
         $authenticatable = new $authenticatableClass;
-        $useUuids = method_exists($authenticatable, 'uniqueIds');
+        $useUuids = method_exists($authenticatable, 'uniqueIds') && count($authenticatable->uniqueIds()) > 0;
 
-        throw_if(empty($tableNames), Exception::class, 'Error: config/keystone.php not loaded. Run [php artisan config:clear] and try again.');
-        throw_if($teams && empty($columnNames['team_foreign_key'] ?? null), Exception::class, 'Error: team_foreign_key on config/keystone.php not loaded. Run [php artisan config:clear] and try again.');
+        // Permissions table
+        Schema::create('permissions', function (Blueprint $table) use ($useUuids) {
+            $table->id();
 
-        Schema::create($tableNames['permissions'], static function (Blueprint $table) {
-            // $table->engine('InnoDB');
-            $table->bigIncrements('id'); // permission id
-            $table->string('name');       // For MyISAM use string('name', 225); // (or 166 for InnoDB with Redundant/Compact row format)
-            $table->string('guard_name'); // For MyISAM use string('guard_name', 25);
-            $table->timestamps();
-
-            $table->unique(['name', 'guard_name']);
-        });
-
-        Schema::create($tableNames['roles'], static function (Blueprint $table) use ($teams, $columnNames) {
-            // $table->engine('InnoDB');
-            $table->bigIncrements('id'); // role id
-            if ($teams || config('keystone.permission.testing')) { // permission.testing is a fix for sqlite testing
-                $table->unsignedBigInteger($columnNames['team_foreign_key'])->nullable();
-                $table->index($columnNames['team_foreign_key'], 'roles_team_foreign_key_index');
+            // Multi-tenancy support (only if enabled in features)
+            // NOTE: tenant_id is always UUID to match users.tenant_id column type
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->uuid('tenant_id')->nullable();
+                $table->index('tenant_id');
             }
-            $table->string('name');       // For MyISAM use string('name', 225); // (or 166 for InnoDB with Redundant/Compact row format)
-            $table->string('guard_name'); // For MyISAM use string('guard_name', 25);
+
+            $table->string('name');
+            $table->string('guard_name')->default('web');
+            $table->string('title')->nullable()->comment('Display name for UI');
+            $table->text('description')->nullable()->comment('Explains permission purpose');
             $table->timestamps();
-            if ($teams || config('keystone.permission.testing')) {
-                $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
+
+            // Unique constraint includes tenant_id when multi-tenant is enabled
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->unique(['tenant_id', 'name', 'guard_name']);
             } else {
                 $table->unique(['name', 'guard_name']);
             }
         });
 
-        Schema::create($tableNames['model_has_permissions'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotPermission, $teams, $useUuids) {
-            $table->unsignedBigInteger($pivotPermission);
+        // Roles table
+        Schema::create('roles', function (Blueprint $table) use ($useUuids) {
+            $table->id();
+
+            // Multi-tenancy support: Roles can be global (tenant_id = NULL) or tenant-specific
+            // NOTE: tenant_id is always UUID to match users.tenant_id column type
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->uuid('tenant_id')->nullable();
+                $table->index('tenant_id');
+            }
+
+            $table->string('name');
+            $table->string('guard_name')->default('web');
+            $table->string('title')->nullable()->comment('Display name for UI');
+            $table->text('description')->nullable()->comment('Explains role purpose and scope');
+            $table->timestamps();
+
+            // Unique constraint includes tenant_id when multi-tenant is enabled
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->unique(['tenant_id', 'name', 'guard_name']);
+            } else {
+                $table->unique(['name', 'guard_name']);
+            }
+        });
+
+        // Model has permissions pivot table
+        Schema::create('model_has_permissions', function (Blueprint $table) use ($useUuids) {
+            $table->id(); // Auto-increment primary key
+
+            $table->unsignedBigInteger('permission_id');
 
             $table->string('model_type');
             if ($useUuids) {
-                $table->uuid($columnNames['model_morph_key']);
+                $table->uuid('model_id');
             } else {
-                $table->unsignedBigInteger($columnNames['model_morph_key']);
+                $table->unsignedBigInteger('model_id');
             }
-            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_permissions_model_id_model_type_index');
+            $table->index(['model_id', 'model_type'], 'model_has_permissions_model_id_model_type_index');
 
-            $table->foreign($pivotPermission)
-                ->references('id') // permission id
-                ->on($tableNames['permissions'])
+            // Multi-tenancy support in pivot table
+            // NOTE: tenant_id is always UUID to match users.tenant_id column type
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->uuid('tenant_id')->nullable();
+                $table->index('tenant_id');
+            }
+
+            $table->foreign('permission_id')
+                ->references('id')
+                ->on('permissions')
                 ->onDelete('cascade');
-            if ($teams) {
-                $table->unsignedBigInteger($columnNames['team_foreign_key']);
-                $table->index($columnNames['team_foreign_key'], 'model_has_permissions_team_foreign_key_index');
 
-                $table->primary([$columnNames['team_foreign_key'], $pivotPermission, $columnNames['model_morph_key'], 'model_type'],
-                    'model_has_permissions_permission_model_type_primary');
+            // Audit trail: timestamps and soft deletes
+            $table->timestamps();
+            $table->softDeletes();
+
+            // Unique constraint to prevent duplicates (handles NULL tenant_id correctly)
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->unique(['tenant_id', 'permission_id', 'model_id', 'model_type'], 'model_has_permissions_unique');
             } else {
-                $table->primary([$pivotPermission, $columnNames['model_morph_key'], 'model_type'],
-                    'model_has_permissions_permission_model_type_primary');
+                $table->unique(['permission_id', 'model_id', 'model_type'], 'model_has_permissions_unique');
             }
-
         });
 
-        Schema::create($tableNames['model_has_roles'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotRole, $teams, $useUuids) {
-            $table->unsignedBigInteger($pivotRole);
+        // Model has roles pivot table
+        Schema::create('model_has_roles', function (Blueprint $table) use ($useUuids) {
+            $table->id(); // Auto-increment primary key
+
+            $table->unsignedBigInteger('role_id');
 
             $table->string('model_type');
             if ($useUuids) {
-                $table->uuid($columnNames['model_morph_key']);
+                $table->uuid('model_id');
             } else {
-                $table->unsignedBigInteger($columnNames['model_morph_key']);
+                $table->unsignedBigInteger('model_id');
             }
-            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_roles_model_id_model_type_index');
+            $table->index(['model_id', 'model_type'], 'model_has_roles_model_id_model_type_index');
 
-            $table->foreign($pivotRole)
-                ->references('id') // role id
-                ->on($tableNames['roles'])
+            // Multi-tenancy support in pivot table
+            // NOTE: tenant_id is always UUID to match users.tenant_id column type
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->uuid('tenant_id')->nullable();
+                $table->index('tenant_id');
+            }
+
+            $table->foreign('role_id')
+                ->references('id')
+                ->on('roles')
                 ->onDelete('cascade');
-            if ($teams) {
-                $table->unsignedBigInteger($columnNames['team_foreign_key']);
-                $table->index($columnNames['team_foreign_key'], 'model_has_roles_team_foreign_key_index');
 
-                $table->primary([$columnNames['team_foreign_key'], $pivotRole, $columnNames['model_morph_key'], 'model_type'],
-                    'model_has_roles_role_model_type_primary');
+            // Audit trail: timestamps and soft deletes
+            $table->timestamps();
+            $table->softDeletes();
+
+            // Unique constraint to prevent duplicates (handles NULL tenant_id correctly)
+            if (config('keystone.features.multi_tenant', false)) {
+                $table->unique(['tenant_id', 'role_id', 'model_id', 'model_type'], 'model_has_roles_unique');
             } else {
-                $table->primary([$pivotRole, $columnNames['model_morph_key'], 'model_type'],
-                    'model_has_roles_role_model_type_primary');
+                $table->unique(['role_id', 'model_id', 'model_type'], 'model_has_roles_unique');
             }
         });
 
-        Schema::create($tableNames['role_has_permissions'], static function (Blueprint $table) use ($tableNames, $pivotRole, $pivotPermission) {
-            $table->unsignedBigInteger($pivotPermission);
-            $table->unsignedBigInteger($pivotRole);
+        // Role has permissions pivot table
+        Schema::create('role_has_permissions', function (Blueprint $table) {
+            $table->id(); // Auto-increment primary key
 
-            $table->foreign($pivotPermission)
-                ->references('id') // permission id
-                ->on($tableNames['permissions'])
+            $table->unsignedBigInteger('permission_id');
+            $table->unsignedBigInteger('role_id');
+
+            $table->foreign('permission_id')
+                ->references('id')
+                ->on('permissions')
                 ->onDelete('cascade');
 
-            $table->foreign($pivotRole)
-                ->references('id') // role id
-                ->on($tableNames['roles'])
+            $table->foreign('role_id')
+                ->references('id')
+                ->on('roles')
                 ->onDelete('cascade');
 
-            $table->primary([$pivotPermission, $pivotRole], 'role_has_permissions_permission_id_role_id_primary');
+            // Audit trail: timestamps and soft deletes
+            $table->timestamps();
+            $table->softDeletes();
+
+            // Unique constraint to prevent duplicates
+            $table->unique(['permission_id', 'role_id'], 'role_has_permissions_unique');
         });
-
-        $cacheStore = config('keystone.permission.cache.store');
-        $resolvedStore = $cacheStore !== 'default' ? $cacheStore : null;
-        $isDatabaseStore = $resolvedStore === 'database'
-            || ($resolvedStore === null && config('cache.default') === 'database');
-
-        if (! $isDatabaseStore || Schema::hasTable(config('cache.stores.database.table', 'cache'))) {
-            app('cache')
-                ->store($resolvedStore)
-                ->forget(config('keystone.permission.cache.key'));
-        }
     }
 
     /**
@@ -142,14 +174,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        $tableNames = config('keystone.permission.table_names');
-
-        throw_if(empty($tableNames), Exception::class, 'Error: config/keystone.php not found and defaults could not be merged. Please publish the package configuration before proceeding, or drop the tables manually.');
-
-        Schema::drop($tableNames['role_has_permissions']);
-        Schema::drop($tableNames['model_has_roles']);
-        Schema::drop($tableNames['model_has_permissions']);
-        Schema::drop($tableNames['roles']);
-        Schema::drop($tableNames['permissions']);
+        Schema::dropIfExists('role_has_permissions');
+        Schema::dropIfExists('model_has_roles');
+        Schema::dropIfExists('model_has_permissions');
+        Schema::dropIfExists('roles');
+        Schema::dropIfExists('permissions');
     }
 };
