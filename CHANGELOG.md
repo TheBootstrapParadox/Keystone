@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `roles` table for tenant-scoped roles
 - `tenant_id` is nullable: `NULL` means global (accessible across all tenants)
 - Unique constraints updated to include `tenant_id` when multi-tenancy is enabled
+- Consolidated Spatie Permission configuration into `config/keystone.php` under `permission`
+- Permission table migrations now read from `keystone.permission` instead of `permission`
 ---
 
 ## [0.7.1] - 2026-02-01
