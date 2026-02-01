@@ -67,7 +67,10 @@ return new class extends Migration
                 $table->index('tenant_id');
             }
 
-            if ($teams || config('keystone.permission.testing')) { // permission.testing is a fix for sqlite testing
+            // Add team_foreign_key if teams are enabled AND it's different from tenant_id
+            // (to avoid duplicate column when multi_tenant uses tenant_id as team_foreign_key)
+            if (($teams || config('keystone.permission.testing')) &&
+                !(config('keystone.features.multi_tenant', false) && $columnNames['team_foreign_key'] === 'tenant_id')) {
                 $table->unsignedBigInteger($columnNames['team_foreign_key'])->nullable();
                 $table->index($columnNames['team_foreign_key'], 'roles_team_foreign_key_index');
             }
@@ -77,12 +80,9 @@ return new class extends Migration
             $table->text('description')->nullable()->comment('Explains role purpose and scope');
             $table->timestamps();
 
+            // When multi-tenant and team_foreign_key both use tenant_id, only include it once in unique constraint
             if (config('keystone.features.multi_tenant', false)) {
-                if ($teams || config('keystone.permission.testing')) {
-                    $table->unique(['tenant_id', $columnNames['team_foreign_key'], 'name', 'guard_name']);
-                } else {
-                    $table->unique(['tenant_id', 'name', 'guard_name']);
-                }
+                $table->unique(['tenant_id', 'name', 'guard_name']);
             } else {
                 if ($teams || config('keystone.permission.testing')) {
                     $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
