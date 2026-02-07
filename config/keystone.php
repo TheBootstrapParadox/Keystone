@@ -82,7 +82,7 @@ return [
         // Allow users to configure passwordless login options
         'passwordless_login' => true,
 
-        // Show roles and permissions on profile page (requires Spatie Laravel Permission)
+        // Show roles and permissions on profile page
         'show_permissions' => true,
 
         // Enable multi-tenant mode (adds tenant_id to users table)
@@ -94,7 +94,7 @@ return [
     | Role & Permission Settings
     |--------------------------------------------------------------------------
     |
-    | Configuration for the RBAC system powered by Spatie Laravel Permission.
+    | Configuration for the role-based access control (RBAC) system.
     |
     */
 
@@ -119,10 +119,10 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Spatie Permission Configuration
+    | Permission System Configuration
     |--------------------------------------------------------------------------
     |
-    | Full configuration for Spatie Laravel Permission, embedded here so
+    | Full configuration for the permission system, embedded here so
     | Keystone has a single source of truth for RBAC settings.
     |
     */
@@ -131,23 +131,13 @@ return [
         'models' => [
 
             /*
-             * When using the "HasPermissions" trait from this package, we need to know which
-             * Eloquent model should be used to retrieve your permissions. Of course, it
-             * is often just the "Permission" model but you may use whatever you like.
-             *
-             * The model you want to use as a Permission model needs to implement the
-             * `Spatie\Permission\Contracts\Permission` contract.
+             * The Eloquent model used to retrieve permissions.
              */
 
             'permission' => BSPDX\Keystone\Models\KeystonePermission::class,
 
             /*
-             * When using the "HasRoles" trait from this package, we need to know which
-             * Eloquent model should be used to retrieve your roles. Of course, it
-             * is often just the "Role" model but you may use whatever you like.
-             *
-             * The model you want to use as a Role model needs to implement the
-             * `Spatie\Permission\Contracts\Role` contract.
+             * The Eloquent model used to retrieve roles.
              */
 
             'role' => BSPDX\Keystone\Models\KeystoneRole::class,
@@ -237,42 +227,15 @@ return [
         'register_octane_reset_listener' => false,
 
         /*
-         * Events will fire when a role or permission is assigned/unassigned:
-         * \Spatie\Permission\Events\RoleAttached
-         * \Spatie\Permission\Events\RoleDetached
-         * \Spatie\Permission\Events\PermissionAttached
-         * \Spatie\Permission\Events\PermissionDetached
-         *
-         * To enable, set to true, and then create listeners to watch these events.
+         * When enabled, events will fire when roles or permissions are assigned/unassigned.
+         * Set to true and create event listeners to watch for these events.
          */
         'events_enabled' => false,
-
-        /*
-         * Teams Feature.
-         * When set to true the package implements teams using the 'team_foreign_key'.
-         * If you want the migrations to register the 'team_foreign_key', you must
-         * set this to true before doing the migration.
-         * If you already did the migration then you must make a new migration to also
-         * add 'team_foreign_key' to 'roles', 'model_has_roles', and 'model_has_permissions'
-         * (view the latest version of this package's migration file)
-         *
-         * NOTE: Keystone consolidates this with multi_tenant feature by using tenant_id
-         * as the team_foreign_key. This is automatically enabled when multi_tenant is true.
-         */
-
-        'teams' => config('keystone.features.multi_tenant', false),
 
         /*
          * When set to true, migrations enable a SQLite-friendly workaround.
          */
         'testing' => false,
-
-        /*
-         * The class to use to resolve the permissions team id
-         *
-         * NOTE: Keystone uses TenantTeamResolver to return tenant_id instead of team_id
-         */
-        'team_resolver' => \BSPDX\Keystone\Support\TenantTeamResolver::class,
 
         /*
          * Passport Client Credentials Grant
@@ -304,12 +267,6 @@ return [
 
         'enable_wildcard_permission' => false,
 
-        /*
-         * The class to use for interpreting wildcard permissions.
-         * If you need to modify delimiters, override the class and specify its name here.
-         */
-        // 'wildcard_permission' => Spatie\Permission\WildcardPermission::class,
-
         /* Cache-specific settings */
 
         'cache' => [
@@ -325,7 +282,7 @@ return [
              * The cache key used to store all permissions.
              */
 
-            'key' => 'spatie.permission.cache',
+            'key' => 'keystone.permission.cache',
 
             /*
              * You may optionally indicate a specific cache driver to use for permission and

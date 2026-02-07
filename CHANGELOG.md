@@ -87,6 +87,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Null tenant filtering causing users without `tenant_id` to have no access
 - Role permission caching in `KeystoneRole::givePermissionTo()` method
 - `tenant_id` column type mismatches (now always UUID)
+- Removed lingering `Spatie\Permission\PermissionServiceProvider` registration from `bootstrap/providers.php`
+- Removed unused `teams` and `team_resolver` configuration options (multi-tenancy now handled via global scopes)
+- Updated cache key from `spatie.permission.cache` to `keystone.permission.cache`
+- Updated configuration comments to reference Keystone models instead of Spatie contracts
+- Removed references to non-existent `TenantTeamResolver` class from configuration files
 
 ### Removed
 

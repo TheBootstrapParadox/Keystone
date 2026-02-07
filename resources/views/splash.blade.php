@@ -385,8 +385,8 @@
             </div>
 
                 <p class="hero-copy">
-                    A comprehensive, production-ready authentication package combining Laravel Fortify, Sanctum, Spatie
-                    Laravel Permission, and Spatie Laravel Passkeys to deliver a full-featured auth system.
+                    A comprehensive, production-ready authentication package combining Laravel Fortify, Sanctum,
+                    and Spatie Laravel Passkeys with a custom RBAC implementation to deliver a full-featured auth system.
                 </p>
 
             <div class="features">
@@ -398,7 +398,7 @@
                 <div class="feature">
                     <div class="feature-icon">RBAC</div>
                     <h3>RBAC System</h3>
-                    <p>Complete Role-Based Access Control using Spatie Laravel Permission</p>
+                    <p>Complete Role-Based Access Control with multi-tenancy support</p>
                 </div>
                 <div class="feature">
                     <div class="feature-icon">TOTP</div>
@@ -750,8 +750,6 @@
                     Fortify</a>
                 <a href="https://github.com/laravel/sanctum" class="badge built-link" target="_blank">Laravel
                     Sanctum</a>
-                <a href="https://github.com/spatie/laravel-permission" class="badge built-link" target="_blank">Spatie
-                    Laravel Permission</a>
                 <a href="https://github.com/spatie/laravel-passkeys" class="badge built-link" target="_blank">Spatie
                     Laravel Passkeys</a>
             </div>
