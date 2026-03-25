@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scopeWithoutTenant()` helper method for super-admin operations
 - Global roles/permissions supported via `tenant_id = NULL` (accessible across all tenants)
 
+**Query Scopes**
+- Added `scopeRole()` to `HasKeystone` for filtering users by one or more assigned role names
+
 ### Changed
 
 **Custom RBAC Implementation**

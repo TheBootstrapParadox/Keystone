@@ -46,6 +46,15 @@ class User extends Authenticatable implements HasPasskeys, MustVerifyEmail
 }
 ```
 
+The `HasKeystone` trait also includes a `scopeRole()` query scope for filtering users by assigned role:
+
+```php
+use App\Models\User;
+
+$admins = User::role('admin')->get();
+$staff = User::role(['admin', 'manager'])->get();
+```
+
 ---
 
 ## Using Built-in KeystoneUser (Recommended for new projects)

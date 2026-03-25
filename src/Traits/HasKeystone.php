@@ -4,6 +4,7 @@ namespace BSPDX\Keystone\Traits;
 
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Models\KeystonePermission;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -17,6 +18,19 @@ trait HasKeystone
     use HasApiTokens;
     use TwoFactorAuthenticatable;
     use InteractsWithPasskeys;
+
+    // ============================================
+    // QUERY SCOPES
+    // ============================================
+
+    /**
+     * Scope a query to users with the given role.
+     */
+    public function scopeRole(Builder $query, string|array $roles): Builder {
+        return $query->whereHas('roles', function ($q) use ($roles) {
+            $q->whereIn('name', (array) $roles);
+        });
+    }
 
     // ============================================
     // RELATIONSHIPS

@@ -239,6 +239,15 @@ This trait combines:
 -   `HasRoles` (Spatie Permission)
 -   `HasPasskeys` (Spatie Passkeys)
 
+You can also query users by assigned role directly from the model:
+
+```php
+use App\Models\User;
+
+$admins = User::role('admin')->get();
+$staff = User::role(['admin', 'manager'])->get();
+```
+
 ### Service Layer (NEW in v0.3.0)
 
 Keystone v0.3.0 introduces a clean service layer architecture to interact with roles, permissions, and passkeys. All external dependencies are now abstracted behind Keystone services.
