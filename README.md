@@ -3,8 +3,8 @@
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/bspdx/keystone.svg?style=flat-square)](https://packagist.org/packages/bspdx/keystone)
 [![Total Downloads](https://img.shields.io/packagist/dt/bspdx/keystone.svg?style=flat-square)](https://packagist.org/packages/bspdx/keystone)
 [![License](https://img.shields.io/packagist/l/bspdx/keystone.svg?style=flat-square)](https://packagist.org/packages/bspdx/keystone)
+A comprehensive, production-ready authentication package for Laravel with an **API-first architecture**. Keystone combines the power of Laravel Fortify, Sanctum, and Spatie Laravel Passkeys to provide a full-featured auth system with:
 
-A comprehensive, production-ready authentication package for Laravel 12 with an **API-first architecture**. Keystone combines the power of Laravel Fortify, Sanctum, Spatie Laravel Permission, and Spatie Laravel Passkeys to provide a full-featured auth system with:
 
 -   🔐 **Standard Authentication** - Powered by Laravel Fortify
 -   👥 **Role-Based Access Control (RBAC)** - Clean service layer API
@@ -48,7 +48,7 @@ All controllers return JSON when requested, making Keystone truly framework-agno
 ## Requirements
 
 -   PHP 8.2+
--   Laravel 12.0+
+-   Laravel 12.x or 13.x
 -   MySQL 5.7+ / PostgreSQL 9.6+ / SQLite 3.8.8+
 
 ## Installation
@@ -213,7 +213,9 @@ See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architectu
 
 ### User Model Setup
 
-Add the `HasKeystone` trait to your `User` model:
+**New project?** Use the built-in `KeystoneUser` model and skip this setup entirely. See [User Model Configuration](docs/USER_MODEL.md) for a full comparison and setup instructions.
+
+Add the `HasKeystone` trait to your existing `User` model:
 
 ```php
 <?php
@@ -236,7 +238,6 @@ This trait combines:
 
 -   `HasApiTokens` (Sanctum)
 -   `TwoFactorAuthenticatable` (Fortify)
--   `HasRoles` (Spatie Permission)
 -   `HasPasskeys` (Spatie Passkeys)
 
 You can also query users by assigned role directly from the model:
@@ -550,6 +551,9 @@ All type hints use these Keystone models, providing a consistent `BSPDX\Keystone
 
 Keystone provides comprehensive multi-tenant support using **global scopes** for automatic tenant isolation. Roles and permissions can be global (accessible across all tenants) or tenant-specific (isolated per organization).
 
+Keystone handles the **RBAC side of multi-tenancy** — scoping roles, permissions, and assignments to a `tenant_id`. It does not provide a `Tenant` model, tenant creation, or user-to-tenant assignment. Your application is responsible for managing tenants and populating `tenant_id` on your `User` model. Keystone reads that value automatically to scope all role and permission queries.
+
+
 ### Quick Start
 
 Enable multi-tenancy in your `.env`:
@@ -597,39 +601,34 @@ $manager = KeystoneRole::create([
 #### Super-Admin Operations
 
 ```php
-use BSPDX\Keystone\Facades\Keystone;
-
 // View all roles across all tenants
 $allRoles = KeystoneRole::withoutTenant()->get();
 
 // Check if user can bypass tenant filtering
-if (Keystone::canBypassPermissions($user)) {
+if ($user->canBypassPermissions()) {
     // User is super-admin
 }
 ```
 
-### Tenant Management Commands
+### Keystone Management Commands
 
-Keystone provides artisan commands for managing tenants:
+Keystone provides artisan commands for managing roles, permissions, and users:
 
 ```bash
-# List all tenants with statistics
-php artisan keystone:list-tenants
+# Create roles and permissions
+php artisan keystone:make-role manager
+php artisan keystone:make-permission edit-posts
 
-# Show detailed information for a specific tenant
-php artisan keystone:show-tenant {tenant_id}
+# Assign and remove roles/permissions
+php artisan keystone:assign-role admin --user={user_id}
+php artisan keystone:unassign-role admin --user={user_id}
+php artisan keystone:assign-permission edit-posts --role=editor
+php artisan keystone:unassign-permission edit-posts --role=editor
 
-# List roles for a specific tenant
-php artisan keystone:list-roles --tenant={tenant_id}
-
-# Create a tenant-specific role
-php artisan keystone:create-role manager --tenant={tenant_id}
-
-# Assign role to user within tenant context
-php artisan keystone:assign-role admin --user={user_id} --tenant={tenant_id}
+# User management
+php artisan keystone:make-user
+php artisan keystone:change-password
 ```
-
-**Note:** Role and permission commands require tenant IDs when multi-tenancy is enabled.
 
 ### Learn More
 
@@ -723,10 +722,9 @@ If you discover any security issues, please email info@bspdx.com instead of usin
 -   Built with:
     -   [Laravel Fortify](https://github.com/laravel/fortify)
     -   [Laravel Sanctum](https://github.com/laravel/sanctum)
-    -   [Spatie Laravel Permission](https://github.com/spatie/laravel-permission) *(abstracted)*
     -   [Spatie Laravel Passkeys](https://github.com/spatie/laravel-passkeys) *(abstracted)*
 
-**Note:** Starting with v0.3.0, all Spatie dependencies are abstracted through Keystone's service layer, providing a clean `BSPDX\Keystone` namespace throughout your application.
+**Note:** Starting with v0.3.0, all Spatie dependencies are abstracted through Keystone's service layer, providing a clean `BSPDX\Keystone` namespace throughout your application. Starting with v0.8.0, role and permission management uses a custom built-in RBAC system; Spatie Laravel Passkeys remains as the passkey backend.
 
 ## License
 
