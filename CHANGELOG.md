@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.8.0] - Unreleased
+## [0.8.0] - 2026.05-25
 
 ### Added
 
@@ -640,7 +640,7 @@ php artisan test
 
 ---
 
-## [Unreleased] -  0.4.0
+## [0.4.0]
 
 #### Changed
 
@@ -659,38 +659,7 @@ php artisan test
 
 #### Migration instructions
 
-Review the [Migration Guide](MIGRATING-TO-SUTHKIT-0.4.0md) for help migrating to this new version. 
-
----
-
-## [0.5.4] 2026-01-24
-
-#### Added
-
-- Added an important notice at the very top of the project's `README.md` informing users about a naming conflict: "I just found out someone else made an AuthKit. I'll get around to renaming this soon, don't you worry!" This ensures visitors see the update immediately and reduces confusion while a rename is planned.
-
----
-
-## [0.5.3] 2026-01-21
-
-#### Changed
-
-- Hardened passkey flows: clone/transform WebAuthn options client-side, return the exact options JSON with credentials, and validate against stored options during registration/authentication (passkey Blade components, passkey controller/service contract and implementation).
-
----
-  - Provides abstraction layer for passkey authentication contracts
-
-#### Usage
-
-```php
-use BSPDX\AuthKit\Contracts\HasPasskeys;
-
-class User extends Authenticatable implements HasPasskeys
-{
-    use HasAuthKit;
-    // ...
-}
-```
+Review the [Migration Guide](MIGRATING-TO-SUTHKIT-0.4.0.md) for help migrating to this new version. 
 
 ---
 
