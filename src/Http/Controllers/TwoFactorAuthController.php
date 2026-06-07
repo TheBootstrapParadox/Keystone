@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Http\Controllers;
 
+use BSPDX\Keystone\Http\Controllers\Concerns\ThrottlesAuthentication;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -11,6 +12,8 @@ use Illuminate\Support\Str;
 
 class TwoFactorAuthController
 {
+    use ThrottlesAuthentication;
+
     /**
      * Display the two-factor authentication setup view.
      */
@@ -65,6 +68,13 @@ class TwoFactorAuthController
 
         $user = $request->user();
 
+        $throttleKey = $this->throttleKey($request, '2fa-confirm');
+        $maxAttempts = (int) config('keystone.rate_limiting.max_2fa_attempts', 3);
+
+        if ($this->hasTooManyAttempts($throttleKey, $maxAttempts)) {
+            return $this->tooManyAttemptsResponse($request, 'code', '2fa-confirm');
+        }
+
         $google2fa = app('pragmarx.google2fa');
         $google2fa->setWindow(config('keystone.two_factor.window', 1));
 
@@ -72,6 +82,8 @@ class TwoFactorAuthController
             decrypt($user->two_factor_secret),
             $request->code
         )) {
+            $this->recordFailedAttempt($throttleKey);
+
             if ($request->wantsJson()) {
                 return response()->json(['message' => 'The provided code was invalid.'], 422);
             }
@@ -80,6 +92,8 @@ class TwoFactorAuthController
                 'code' => 'The provided code was invalid.',
             ]);
         }
+
+        $this->clearAttempts($throttleKey);
 
         $user->forceFill([
             'two_factor_confirmed_at' => now(),

@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Http\Controllers;
 
+use BSPDX\Keystone\Http\Controllers\Concerns\ThrottlesAuthentication;
 use BSPDX\Keystone\Services\Contracts\PasskeyServiceInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\Session;
 
 class PasskeyAuthController
 {
+    use ThrottlesAuthentication;
+
     protected const SESSION_REGISTER_OPTIONS = 'passkey-register-options';
 
     protected const SESSION_AUTH_OPTIONS = 'passkey-authentication-options';
@@ -35,7 +38,7 @@ class PasskeyAuthController
     /**
      * Generate passkey registration options.
      */
-    public function registerOptions(Request $request): JsonResponse
+    public function registerOptions(Request $request): JsonResponse|RedirectResponse
     {
         abort_if(! config('keystone.features.passkeys', false), 404);
 
@@ -167,6 +170,13 @@ class PasskeyAuthController
             'options' => ['required'],
         ]);
 
+        $throttleKey = $this->throttleKey($request, 'passkey-auth');
+        $maxAttempts = (int) config('keystone.rate_limiting.max_passkey_attempts', 3);
+
+        if ($this->hasTooManyAttempts($throttleKey, $maxAttempts)) {
+            return $this->tooManyAttemptsResponse($request, 'passkey', 'passkey-auth');
+        }
+
         // Get credential and options as JSON strings
         $credentialJson = is_string($validated['credential'])
             ? $validated['credential']
@@ -185,6 +195,8 @@ class PasskeyAuthController
 
             $user = $this->passkeyService->getAuthenticatableFromPasskey($passkey);
 
+            $this->clearAttempts($throttleKey);
+
             auth()->login($user, remember: true);
 
             if ($request->wantsJson()) {
@@ -196,6 +208,8 @@ class PasskeyAuthController
 
             return redirect()->intended(config('keystone.redirects.login', '/dashboard'));
         } catch (\Exception $e) {
+            $this->recordFailedAttempt($throttleKey);
+
             if ($request->wantsJson()) {
                 return response()->json([
                     'message' => 'Authentication failed: '.$e->getMessage(),
@@ -230,7 +244,7 @@ class PasskeyAuthController
     /**
      * Display the passkey second-factor challenge view.
      */
-    public function twofaChallengeView(): \Illuminate\Contracts\View\View
+    public function twofaChallengeView(): View
     {
         abort_if(! config('keystone.features.passkey_2fa', false), 404);
 
@@ -275,6 +289,13 @@ class PasskeyAuthController
             'credential' => ['required'],
         ]);
 
+        $throttleKey = $this->throttleKey($request, 'passkey-2fa');
+        $maxAttempts = (int) config('keystone.rate_limiting.max_passkey_attempts', 3);
+
+        if ($this->hasTooManyAttempts($throttleKey, $maxAttempts)) {
+            return $this->tooManyAttemptsResponse($request, 'passkey', 'passkey-2fa');
+        }
+
         // Pull the challenge from the session (single-use — prevents replay).
         $optionsJson = $request->session()->pull(self::SESSION_2FA_OPTIONS);
 
@@ -302,6 +323,8 @@ class PasskeyAuthController
                 throw new \Exception('Invalid passkey credential.');
             }
 
+            $this->clearAttempts($throttleKey);
+
             $request->session()->put('auth.passkey_2fa_verified_at', now());
 
             if ($request->wantsJson()) {
@@ -313,6 +336,8 @@ class PasskeyAuthController
 
             return redirect()->intended(config('keystone.redirects.login', '/dashboard'));
         } catch (\Exception $e) {
+            $this->recordFailedAttempt($throttleKey);
+
             if ($request->wantsJson()) {
                 return response()->json([
                     'message' => 'Verification failed: '.$e->getMessage(),

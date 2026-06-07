@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Http\Controllers;
 
+use BSPDX\Keystone\Http\Controllers\Concerns\ThrottlesAuthentication;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -9,6 +10,8 @@ use Illuminate\Support\Facades\Auth;
 
 class LoginController
 {
+    use ThrottlesAuthentication;
+
     /**
      * Get available authentication methods for an email.
      *
@@ -59,6 +62,13 @@ class LoginController
             'totp_code' => 'required|string|size:6',
         ]);
 
+        $throttleKey = $this->throttleKey($request, 'totp-login');
+        $maxAttempts = (int) config('keystone.rate_limiting.max_login_attempts', 5);
+
+        if ($this->hasTooManyAttempts($throttleKey, $maxAttempts)) {
+            return $this->tooManyAttemptsResponse($request, 'email', 'totp-login');
+        }
+
         // Get the user model class from config
         $userModel = config('auth.providers.users.model', 'App\\Models\\User');
 
@@ -66,6 +76,8 @@ class LoginController
 
         // Check if user exists and has TOTP login enabled
         if (! $user || ! $user->allow_totp_login || ! $user->hasTwoFactorEnabled()) {
+            $this->recordFailedAttempt($throttleKey);
+
             if ($request->wantsJson()) {
                 return response()->json(['message' => 'Invalid credentials.'], 401);
             }
@@ -83,12 +95,16 @@ class LoginController
         );
 
         if (! $valid) {
+            $this->recordFailedAttempt($throttleKey);
+
             if ($request->wantsJson()) {
                 return response()->json(['message' => 'Invalid authentication code.'], 401);
             }
 
             return back()->withErrors(['totp_code' => 'Invalid authentication code.']);
         }
+
+        $this->clearAttempts($throttleKey);
 
         // Log the user in
         Auth::login($user, $request->boolean('remember'));

@@ -2,9 +2,10 @@
 
 namespace BSPDX\Keystone\Services;
 
+use BSPDX\Keystone\Models\KeystonePermission;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
-use BSPDX\Keystone\Models\KeystonePermission;
+use Illuminate\Support\Collection;
 
 /**
  * PermissionRegistrar Service
@@ -19,24 +20,28 @@ class PermissionRegistrar
 {
     /**
      * The cache repository instance.
-     *
-     * @var CacheRepository
      */
     protected CacheRepository $cache;
 
     /**
      * The cache key for storing permissions.
-     *
-     * @var string
      */
     protected string $cacheKey = 'keystone.permissions.all';
-
-    protected int $cacheExpiration;
 
     public function __construct(CacheRepository $cache)
     {
         $this->cache = $cache;
-        $this->cacheExpiration = config('keystone.rbac.cache_expiration', 86400);
+    }
+
+    /**
+     * Get the cache TTL (in seconds) for permissions.
+     *
+     * Read from config at call time rather than cached on the instance so the
+     * configured value is honored even though this registrar is a singleton.
+     */
+    protected function cacheExpiration(): int
+    {
+        return (int) (config('keystone.rbac.cache_expiration') ?? 86400);
     }
 
     /**
@@ -45,9 +50,6 @@ class PermissionRegistrar
      * This method:
      * 1. Adds a Gate::before callback for super-admin bypass
      * 2. Defines a gate for each permission in the system
-     *
-     * @param Gate $gate
-     * @return void
      */
     public function registerPermissions(Gate $gate): void
     {
@@ -80,13 +82,13 @@ class PermissionRegistrar
     /**
      * Get all permissions (cached).
      *
-     * @return \Illuminate\Support\Collection
+     * @return Collection
      */
     protected function getPermissions()
     {
         return $this->cache->remember(
             $this->cacheKey,
-            $this->cacheExpiration,
+            $this->cacheExpiration(),
             function () {
                 return KeystonePermission::withoutTenant()->get();
             }
@@ -97,8 +99,6 @@ class PermissionRegistrar
      * Forget the cached permissions.
      *
      * Call this after creating, updating, or deleting permissions.
-     *
-     * @return void
      */
     public function forgetCachedPermissions(): void
     {
@@ -109,9 +109,6 @@ class PermissionRegistrar
      * Re-register all permissions with the gate.
      *
      * Useful after permission changes.
-     *
-     * @param Gate $gate
-     * @return void
      */
     public function refresh(Gate $gate): void
     {
@@ -121,10 +118,6 @@ class PermissionRegistrar
 
     /**
      * Check if a permission exists in the system.
-     *
-     * @param string $permissionName
-     * @param string $guardName
-     * @return bool
      */
     public function permissionExists(string $permissionName, string $guardName = 'web'): bool
     {
@@ -137,7 +130,7 @@ class PermissionRegistrar
     /**
      * Get all permission names.
      *
-     * @return \Illuminate\Support\Collection
+     * @return Collection
      */
     public function getAllPermissionNames()
     {
