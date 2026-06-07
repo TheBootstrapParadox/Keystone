@@ -2,9 +2,9 @@
 
 namespace BSPDX\Keystone\Http\Controllers;
 
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class LoginController
@@ -19,12 +19,16 @@ class LoginController
     {
         $request->validate(['email' => 'required|email']);
 
+        if (! config('keystone.features.passwordless_login', false)) {
+            return response()->json(['methods' => ['password']]);
+        }
+
         // Get the user model class from config or default to App\Models\User
         $userModel = config('auth.providers.users.model', 'App\\Models\\User');
 
         $user = $userModel::where('email', $request->email)->first();
 
-        if (!$user) {
+        if (! $user) {
             // Don't reveal if user exists - return default methods
             return response()->json(['methods' => ['password']]);
         }
@@ -48,6 +52,8 @@ class LoginController
      */
     public function authenticateWithTotp(Request $request): RedirectResponse|JsonResponse
     {
+        abort_if(! config('keystone.features.passwordless_login', false), 404);
+
         $request->validate([
             'email' => 'required|email',
             'totp_code' => 'required|string|size:6',
@@ -59,10 +65,11 @@ class LoginController
         $user = $userModel::where('email', $request->email)->first();
 
         // Check if user exists and has TOTP login enabled
-        if (!$user || !$user->allow_totp_login || !$user->hasTwoFactorEnabled()) {
+        if (! $user || ! $user->allow_totp_login || ! $user->hasTwoFactorEnabled()) {
             if ($request->wantsJson()) {
                 return response()->json(['message' => 'Invalid credentials.'], 401);
             }
+
             return back()->withErrors(['email' => 'Invalid credentials.']);
         }
 
@@ -72,10 +79,11 @@ class LoginController
             $request->totp_code
         );
 
-        if (!$valid) {
+        if (! $valid) {
             if ($request->wantsJson()) {
                 return response()->json(['message' => 'Invalid authentication code.'], 401);
             }
+
             return back()->withErrors(['totp_code' => 'Invalid authentication code.']);
         }
 

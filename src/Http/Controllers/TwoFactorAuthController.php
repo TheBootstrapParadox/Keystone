@@ -2,12 +2,12 @@
 
 namespace BSPDX\Keystone\Http\Controllers;
 
-use Illuminate\Http\Request;
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
-use Illuminate\Contracts\View\View;
 
 class TwoFactorAuthController
 {
@@ -16,6 +16,8 @@ class TwoFactorAuthController
      */
     public function create(Request $request): View
     {
+        abort_if(! config('keystone.features.two_factor', false), 404);
+
         return view('keystone::two-factor.enable', [
             'user' => $request->user(),
         ]);
@@ -26,6 +28,8 @@ class TwoFactorAuthController
      */
     public function store(Request $request): RedirectResponse|JsonResponse
     {
+        abort_if(! config('keystone.features.two_factor', false), 404);
+
         $user = $request->user();
 
         // Generate 2FA secret
@@ -53,13 +57,15 @@ class TwoFactorAuthController
      */
     public function confirm(Request $request): RedirectResponse|JsonResponse
     {
+        abort_if(! config('keystone.features.two_factor', false), 404);
+
         $request->validate([
             'code' => ['required', 'string'],
         ]);
 
         $user = $request->user();
 
-        if (!app('pragmarx.google2fa')->verifyKey(
+        if (! app('pragmarx.google2fa')->verifyKey(
             decrypt($user->two_factor_secret),
             $request->code
         )) {
@@ -88,6 +94,8 @@ class TwoFactorAuthController
      */
     public function destroy(Request $request): RedirectResponse|JsonResponse
     {
+        abort_if(! config('keystone.features.two_factor', false), 404);
+
         $request->user()->forceFill([
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
@@ -106,6 +114,8 @@ class TwoFactorAuthController
      */
     public function recoveryCodes(Request $request): JsonResponse
     {
+        abort_if(! config('keystone.features.two_factor', false), 404);
+
         $codes = $this->getRecoveryCodes($request->user());
 
         return response()->json([
@@ -119,6 +129,8 @@ class TwoFactorAuthController
      */
     public function regenerateRecoveryCodes(Request $request): RedirectResponse|JsonResponse
     {
+        abort_if(! config('keystone.features.two_factor', false), 404);
+
         $request->user()->forceFill([
             'two_factor_recovery_codes' => encrypt(json_encode($this->generateRecoveryCodes())),
         ])->save();
@@ -146,7 +158,7 @@ class TwoFactorAuthController
         $count = config('keystone.two_factor.recovery_codes_count', 8);
 
         return Collection::times($count, function () {
-            return Str::random(10) . '-' . Str::random(10);
+            return Str::random(10).'-'.Str::random(10);
         })->toArray();
     }
 

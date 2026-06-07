@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use BSPDX\Keystone\Http\Controllers\TwoFactorAuthController;
+use BSPDX\Keystone\Http\Controllers\LoginController;
 use BSPDX\Keystone\Http\Controllers\PasskeyAuthController;
 use BSPDX\Keystone\Http\Controllers\ProfileController;
-use BSPDX\Keystone\Http\Controllers\LoginController;
+use BSPDX\Keystone\Http\Controllers\TwoFactorAuthController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -28,13 +28,13 @@ Route::middleware(config('keystone.profile.middleware', ['web', 'auth']))->group
     Route::get(config('keystone.profile.path', '/profile'), [ProfileController::class, 'show'])
         ->name('keystone.profile.show');
 
-    Route::put(config('keystone.profile.path', '/profile') . '/auth-preferences', [ProfileController::class, 'updateAuthPreferences'])
+    Route::put(config('keystone.profile.path', '/profile').'/auth-preferences', [ProfileController::class, 'updateAuthPreferences'])
         ->middleware('password-confirm')
         ->name('keystone.profile.auth-preferences.update');
 });
 
 // Passwordless Login Routes (guest)
-Route::middleware(['web', 'guest'])->group(function () {
+Route::middleware(['web', 'guest', 'keystone.feature:passwordless_login'])->group(function () {
     // Get available auth methods for an email
     Route::post('/login/methods', [LoginController::class, 'getAuthMethods'])
         ->name('keystone.login.methods');
@@ -45,7 +45,7 @@ Route::middleware(['web', 'guest'])->group(function () {
 });
 
 // Two-Factor Authentication Routes
-Route::middleware(['web', 'auth'])->group(function () {
+Route::middleware(['web', 'auth', 'keystone.feature:two_factor'])->group(function () {
     // Enable 2FA setup view (read-only, no password confirm needed)
     Route::get('/user/two-factor-authentication', [TwoFactorAuthController::class, 'create'])
         ->name('two-factor.enable');
@@ -71,7 +71,7 @@ Route::middleware(['web', 'auth'])->group(function () {
 });
 
 // Passkey Routes
-Route::middleware(['web'])->group(function () {
+Route::middleware(['web', 'keystone.feature:passkeys'])->group(function () {
     // Passkey login (guest)
     Route::get('/passkey/login', [PasskeyAuthController::class, 'loginView'])
         ->name('passkeys.login')

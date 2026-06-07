@@ -2,16 +2,17 @@
 
 namespace BSPDX\Keystone\Http\Controllers;
 
-use Illuminate\Http\Request;
+use BSPDX\Keystone\Services\Contracts\PasskeyServiceInterface;
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Contracts\View\View;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
-use BSPDX\Keystone\Services\Contracts\PasskeyServiceInterface;
 
 class PasskeyAuthController
 {
     protected const SESSION_REGISTER_OPTIONS = 'passkey-register-options';
+
     protected const SESSION_AUTH_OPTIONS = 'passkey-authentication-options';
 
     public function __construct(
@@ -23,6 +24,8 @@ class PasskeyAuthController
      */
     public function registerView(Request $request): View
     {
+        abort_if(! config('keystone.features.passkeys', false), 404);
+
         return view('keystone::passkeys.register', [
             'user' => $request->user(),
             'passkeys' => $request->user()->passkeys,
@@ -34,6 +37,8 @@ class PasskeyAuthController
      */
     public function registerOptions(Request $request): JsonResponse
     {
+        abort_if(! config('keystone.features.passkeys', false), 404);
+
         $optionsJson = $this->passkeyService->generateRegisterOptions($request->user());
 
         // Store options in session for validation during registration
@@ -47,6 +52,8 @@ class PasskeyAuthController
      */
     public function store(Request $request): RedirectResponse|JsonResponse
     {
+        abort_if(! config('keystone.features.passkeys', false), 404);
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'credential' => ['required'],
@@ -80,7 +87,7 @@ class PasskeyAuthController
         } catch (\Exception $e) {
             if ($request->wantsJson()) {
                 return response()->json([
-                    'message' => 'Failed to register passkey: ' . $e->getMessage(),
+                    'message' => 'Failed to register passkey: '.$e->getMessage(),
                 ], 422);
             }
 
@@ -95,6 +102,8 @@ class PasskeyAuthController
      */
     public function destroy(Request $request, string $passkeyId): RedirectResponse|JsonResponse
     {
+        abort_if(! config('keystone.features.passkeys', false), 404);
+
         $passkey = $request->user()->passkeys()->findOrFail($passkeyId);
         $passkey->delete();
 
@@ -112,6 +121,8 @@ class PasskeyAuthController
      */
     public function loginView(): View
     {
+        abort_if(! config('keystone.features.passkeys', false), 404);
+
         return view('keystone::passkeys.login');
     }
 
@@ -120,6 +131,8 @@ class PasskeyAuthController
      */
     public function loginOptions(Request $request): JsonResponse
     {
+        abort_if(! config('keystone.features.passkeys', false), 404);
+
         // This also stores options in session via Spatie's action
         $optionsJson = $this->passkeyService->generateAuthenticationOptions();
 
@@ -131,6 +144,8 @@ class PasskeyAuthController
      */
     public function authenticate(Request $request): RedirectResponse|JsonResponse
     {
+        abort_if(! config('keystone.features.passkeys', false), 404);
+
         $validated = $request->validate([
             'credential' => ['required'],
             'options' => ['required'],
@@ -148,7 +163,7 @@ class PasskeyAuthController
         try {
             $passkey = $this->passkeyService->findPasskeyToAuthenticate($credentialJson, $optionsJson);
 
-            if (!$passkey) {
+            if (! $passkey) {
                 throw new \Exception('Invalid passkey credential.');
             }
 
@@ -167,7 +182,7 @@ class PasskeyAuthController
         } catch (\Exception $e) {
             if ($request->wantsJson()) {
                 return response()->json([
-                    'message' => 'Authentication failed: ' . $e->getMessage(),
+                    'message' => 'Authentication failed: '.$e->getMessage(),
                 ], 401);
             }
 
@@ -182,6 +197,8 @@ class PasskeyAuthController
      */
     public function index(Request $request): JsonResponse
     {
+        abort_if(! config('keystone.features.passkeys', false), 404);
+
         $passkeys = $request->user()->passkeys()->get()->map(function ($passkey) {
             return [
                 'id' => $passkey->id,
