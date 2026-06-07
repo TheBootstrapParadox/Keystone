@@ -1,11 +1,74 @@
 # Changelog
 
-All notable changes to `bspdx/keystone` will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 **Note:** This CHANGELOG was created starting with v0.3.0. Changes prior to this version were not formally documented.
+
+---
+
+## [0.9.0] - 2026-06-07
+
+### Added
+
+- `rate_limiting.*` config keys are now wired to real throttling via the `ThrottlesAuthentication` controller concern (`src/Http/Controllers/Concerns/ThrottlesAuthentication.php`), backed by Laravel's `RateLimiter`:
+  - `max_login_attempts` + `lockout_duration` throttle passwordless TOTP login (`LoginController::authenticateWithTotp`)
+  - `max_2fa_attempts` throttles 2FA code verification (`TwoFactorAuthController::confirm`)
+  - `max_passkey_attempts` throttles passkey login and passkey second-factor verification (`PasskeyAuthController::authenticate`, `twofaVerify`)
+  - Exceeding a ceiling returns HTTP 429 (JSON) or redirects back with an error (web), reporting the remaining lockout time; `lockout_duration` (minutes) is the decay window; counters clear on success
+- Config regression coverage so dead config can no longer silently accumulate:
+  - `Tests\Feature\ConfigRegressionTest` — passkey option keys (`timeout`/`user_verification`/`attestation`), `two_factor.recovery_codes_count`, `redirects.login`, feature-flag 404 guards, and `rbac.default_role` / `user.model` (via `keystone:make-user`)
+  - `Tests\Feature\RateLimitingTest` — 4 tests proving the `rate_limiting.*` ceilings and lockout behavior
+  - `Tests\Unit\Services\PermissionRegistrarTest` — 3 tests for dynamic `rbac.cache_expiration` reads
+
+- `two_factor.qr_code_size` is now wired: `HasKeystone` overrides Fortify's `twoFactorQrCodeSvg()` (which hardcoded 192px) and reads the configured pixel size instead
+- `two_factor.window` is now wired: `TwoFactorAuthController::confirm()` and `LoginController::authenticateWithTotp()` both call `setWindow(config('keystone.two_factor.window'))` before every `verifyKey()` call
+- `features.account_deletion` endpoint (`DELETE /user/account`): revokes all Sanctum tokens, invalidates the session, and deletes the user record; passkeys cascade via FK; route requires `password-confirm` middleware; returns 404 when disabled
+- `features.passkey_2fa` second-factor challenge flow: new `RequirePasskey2FA` middleware (alias `passkey-2fa`) that requires session flag `auth.passkey_2fa_verified_at` when the authenticated user has passkeys; new controller methods `twofaChallengeView`, `twofaChallengeOptions`, and `twofaVerify` on `PasskeyAuthController` at routes `GET /passkey/2fa/challenge`, `POST /passkey/2fa/options`, `POST /passkey/2fa/verify`; new stub view `resources/views/passkeys/2fa-challenge.blade.php`
+- `Tests\Feature\TwoFactorConfigTest` — 5 tests covering `qr_code_size` SVG dimensions and `window` passed to `setWindow()`
+- `Tests\Feature\AccountDeletionTest` — 4 tests covering 404 when disabled, user deletion, token revocation, web redirect
+- `Tests\Feature\PasskeyTwoFactorTest` — 11 tests covering middleware pass-through conditions, 423/redirect enforcement, verify endpoint sets session flag, passkey ownership enforcement, session-bound challenge, and single-use replay protection
+
+- `passkey.*` config keys are now fully wired to runtime behavior:
+  - `rp_name` and `rp_id` bridge to Spatie's `passkeys.relying_party.name/id` in `KeystoneServiceProvider::register()`, making Keystone the authoritative config surface for WebAuthn relying-party identity
+  - `timeout`, `user_verification`, and `attestation` are applied via a new `BSPDX\Keystone\Actions\GeneratePasskeyRegisterOptionsAction` that extends Spatie's action and reads from Keystone config; the custom action is bound over Spatie's in the service container
+  - `allow_multiple` is now enforced in `PasskeyAuthController::registerOptions()` and `store()`: when `false`, any attempt to register a second passkey returns a 422 response with message "Only one passkey is allowed per account."
+- `Tests\Feature\PasskeyConfigTest` — 7 focused tests covering config bridge, container binding, and `allow_multiple` enforcement
+
+- `RequirePasswordConfirm` middleware (`src/Http/Middleware/RequirePasswordConfirm.php`) enforcing `profile.require_password_confirm` on all Keystone-owned sensitive profile actions
+- `password-confirm` middleware alias registered by `KeystoneServiceProvider`
+- `password-confirm` applied to: auth-preferences update, 2FA store/confirm/destroy/recovery-code-regenerate, passkey store/destroy
+- When password confirmation is required and expired: API requests receive `423 Unprocessable` with JSON message; web requests redirect to `password.confirm`
+- Timeout driven by `keystone.session.password_timeout` (default 10800 seconds / 3 hours)
+
+### Fixed
+
+- `rbac.cache_expiration` is now honored dynamically. `PermissionRegistrar` is a singleton that previously captured the TTL once in its constructor, so any config change after boot (and config changes in tests) never took effect. The TTL is now read from config at each cache write (`PermissionRegistrar::cacheExpiration()`), and an explicit `null` config value falls back to the 86400-second default. Covered by `Tests\Unit\Services\PermissionRegistrarTest` (3 tests).
+- `features.show_permissions` now correctly controls whether roles and permissions are loaded and exposed in the profile view. The previous guard used `method_exists($user, 'getRoleNames')` (a Spatie Laravel Permission method that does not exist on `HasKeystone`), causing roles and permissions to never be loaded regardless of the flag value. The guard now uses the Keystone trait's own `$user->roles` relationship and `$user->getAllPermissions()` method.
+
+### Security
+
+- Passkey second-factor verification (`PasskeyAuthController::twofaVerify()`) now enforces passkey ownership: the resolved passkey must belong to the authenticated user, preventing a passkey from another account from setting the `auth.passkey_2fa_verified_at` session flag.
+- Passkey second-factor verification is no longer vulnerable to challenge replay or client-controlled WebAuthn options. The challenge generated by `twofaChallengeOptions()` is stored server-side in the session and pulled (single-use) during verification, rather than being accepted from the request body.
+
+### Testing
+
+- ✅ All 109 tests passing (239 assertions)
+
+### Known Issues
+
+- **Passkey route conflict with Fortify**: `laravel/passkeys` (a transitive dependency of `laravel/fortify` v1.37.2+) registers a global `Route::bind('passkey', ...)` model binding and `DELETE /user/passkeys/{passkey}` via Fortify's route file. Fortify's route takes priority over Keystone's own passkey delete route. Both middlewares return HTTP 423 for unconfirmed JSON requests, so the end-user behavior is identical; the conflict affects route ownership only. This will be resolved when Keystone migrates its passkey backend from `spatie/laravel-passkeys` to `laravel/passkeys` (see planned work below).
+
+### Planned
+
+- Migrate the internal passkey backend from `spatie/laravel-passkeys` to `laravel/passkeys` (first-party Laravel package). This is an internal change only — the public API surface (`BSPDX\Keystone\Models\Passkey`, `BSPDX\Keystone\Contracts\HasPasskeys`, `PasskeyServiceInterface`) will remain unchanged so consuming apps require no updates.
+
+### Removed
+
+- `features.registration` config key — Keystone is presentation-only for registration (Fortify owns the endpoint). The `$showRegisterLink` component prop on `<x-keystone-login-form>` is the correct control surface.
+- `features.update_passwords` config key — Keystone does not own the password update endpoint (Fortify does). The profile view now renders the password-change section unconditionally; host apps can suppress it by publishing views.
+
+### Changed
+
+- Login form register-link visibility is now controlled solely by the `$showRegisterLink` component prop, removing the redundant `config('keystone.features.registration')` check
+- Profile `show.blade.php` password-change section is now unconditional (no longer gated on the removed `features.update_passwords` flag)
 
 ---
 

@@ -10,7 +10,7 @@ A comprehensive, production-ready authentication package for Laravel with an **A
 -   👥 **Role-Based Access Control (RBAC)** - Clean service layer API
 -   📱 **TOTP Two-Factor Authentication** - Google Authenticator, Authy, etc.
 -   🔑 **Passkey Authentication** - Modern WebAuthn/FIDO2 login
--   🛡️ **Passkey as 2FA** - Use passkeys as a second factor
+-   🚦 **Brute-Force Protection** - Configurable rate limiting on login, 2FA, and passkey attempts
 -   🎨 **Optional Blade UI Components** - Pre-built views for Laravel projects
 -   🌐 **API-First Design** - Works with React, Vue, mobile apps, or any frontend
 -   🏢 **Multi-Tenancy Ready** - Optional tenant scoping
@@ -130,22 +130,30 @@ The package configuration is located at `config/keystone.php`. Key settings:
 
 ```php
 'features' => [
-    'registration' => true,
-    'email_verification' => true,
+    // Two-factor authentication (TOTP via Fortify)
     'two_factor' => true,
+
+    // Passkey authentication (WebAuthn/FIDO2)
     'passkeys' => true,
-    'passkey_2fa' => true,
-    'api_tokens' => true,
-    'update_profile' => true,
-    'update_passwords' => true,
+
+    // Passkey as a second factor (reserved — not yet implemented)
+    'passkey_2fa' => false,
+
+    // Account deletion endpoint (reserved — not yet implemented)
     'account_deletion' => false,
+
+    // Allow users to configure passwordless login options
     'passwordless_login' => true,
+
+    // Show roles and permissions on the profile page
     'show_permissions' => true,
 
     // Enable multi-tenant mode (adds tenant_id column to users, roles, and permissions tables)
     'multi_tenant' => env('KEYSTONE_MULTI_TENANT', false),
 ],
 ```
+
+> **Note:** Standard auth features — registration, email verification, password reset, profile/password updates, and API tokens — are provided by Laravel Fortify and Sanctum, and are configured in `config/fortify.php` (see [Step 5](#step-5-configure-fortify)). The `keystone.features` array only toggles Keystone-specific functionality.
 
 When `multi_tenant` is enabled, Keystone will add a nullable `tenant_id` column to users, roles, permissions, and pivot tables. Keystone uses **global scopes** for automatic tenant isolation (not Spatie's teams feature).
 
@@ -178,7 +186,13 @@ See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architectu
 
 ```php
 'rbac' => [
+    // Cache expiration time for roles and permissions (in seconds)
+    'cache_expiration' => 60 * 60 * 24, // 24 hours
+
+    // Default role assigned to new users (null = no default role)
     'default_role' => 'user',
+
+    // Super admin role that bypasses all permission checks
     'super_admin_role' => 'super-admin',
 ],
 ```
@@ -187,9 +201,21 @@ See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architectu
 
 ```php
 'passkey' => [
+    // Relying Party name (your application name)
     'rp_name' => env('APP_NAME', 'Laravel'),
-    'rp_id' => env('PASSKEY_RP_ID', 'localhost'),
+
+    // Relying Party ID — derived from APP_URL host, falls back to 'localhost'
+    'rp_id' => env('APP_URL') ? parse_url(env('APP_URL'), PHP_URL_HOST) : 'localhost',
+
+    // Timeout for passkey operations (in milliseconds)
+    'timeout' => 60000,
+
+    // User verification: 'required', 'preferred', or 'discouraged'
     'user_verification' => 'preferred',
+
+    // Attestation conveyance: 'none', 'indirect', or 'direct'
+    'attestation' => 'none',
+
     'allow_multiple' => true,
     'required_for_roles' => [
         // 'admin',
@@ -203,9 +229,53 @@ See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architectu
 'two_factor' => [
     'qr_code_size' => 200,
     'recovery_codes_count' => 8,
+
+    // Window of time to accept TOTP codes (in periods, 1 period = 30 seconds)
+    'window' => 1,
+
     'required_for_roles' => [
         // 'admin',
     ],
+],
+```
+
+### Rate Limiting
+
+Keystone throttles authentication attempts to protect against brute-force attacks. Attempts are keyed by action, identifier (authenticated user or submitted email), and client IP.
+
+```php
+'rate_limiting' => [
+    // Maximum login attempts before lockout
+    'max_login_attempts' => 5,
+
+    // Lockout duration in minutes
+    'lockout_duration' => 1,
+
+    // Maximum 2FA attempts
+    'max_2fa_attempts' => 3,
+
+    // Maximum passkey attempts
+    'max_passkey_attempts' => 3,
+],
+```
+
+When a limit is exceeded, JSON requests receive a `429 Too Many Attempts` response with the remaining lockout time.
+
+### Profile Page Settings
+
+```php
+'profile' => [
+    // URI path where the profile page is accessible
+    'path' => '/profile',
+
+    // Middleware applied to profile routes
+    'middleware' => ['web', 'auth'],
+
+    // Require password confirmation before sensitive operations
+    'require_password_confirm' => true,
+
+    // Layout view to extend (set to null for component-only mode)
+    'layout' => 'layouts.app',
 ],
 ```
 
@@ -361,7 +431,16 @@ require __DIR__.'/keystone-api.php';
 
 ### Middleware
 
-Keystone provides three middleware aliases:
+Keystone registers six middleware aliases:
+
+| Alias | Purpose |
+| --- | --- |
+| `role:<role>` | Require one of the listed roles (OR logic) |
+| `permission:<perm>` | Require one of the listed permissions (OR logic) |
+| `2fa` | Ensure users with required roles have 2FA enabled |
+| `keystone.feature:<name>` | Return `404` if the named feature flag is disabled |
+| `password-confirm` | Require recent password confirmation for sensitive routes |
+| `passkey-2fa` | Require passkey second-factor verification |
 
 #### Role Middleware
 
@@ -394,6 +473,36 @@ Route::middleware(['auth', 'permission:edit-posts,publish-posts'])->group(functi
 ```php
 Route::middleware(['auth', '2fa'])->group(function () {
     // Ensures users with required roles have 2FA enabled
+});
+```
+
+#### Feature Flag Middleware
+
+Gate routes behind a `keystone.features.*` flag. Requests to a disabled feature return `404`.
+
+```php
+Route::middleware(['auth', 'keystone.feature:account_deletion'])->group(function () {
+    // Only reachable when 'account_deletion' is enabled in config
+});
+```
+
+#### Password Confirmation Middleware
+
+Require a recent password confirmation before sensitive operations. Web requests are redirected to the `password.confirm` route; JSON requests receive a `423` response. The confirmation window is set by `keystone.session.password_timeout`.
+
+```php
+Route::middleware(['auth', 'password-confirm'])->group(function () {
+    // Requires the user to have confirmed their password recently
+});
+```
+
+#### Passkey 2FA Middleware
+
+Require passkey second-factor verification for users with a registered passkey. JSON requests receive a `423` response; web requests are redirected to the passkey challenge.
+
+```php
+Route::middleware(['auth', 'passkey-2fa'])->group(function () {
+    // Requires passkey verification when passkey_2fa is enabled
 });
 ```
 
