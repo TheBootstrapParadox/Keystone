@@ -95,6 +95,6 @@ Route::middleware(['auth:sanctum'])->prefix('api/user')->group(function () {
     Route::post('/passkeys', [PasskeyAuthController::class, 'store'])
         ->name('api.passkeys.store');
 
-    Route::delete('/passkeys/{passkey}', [PasskeyAuthController::class, 'destroy'])
+    Route::delete('/passkeys/{passkeyId}', [PasskeyAuthController::class, 'destroy'])
         ->name('api.passkeys.destroy');
 });

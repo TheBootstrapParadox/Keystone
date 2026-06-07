@@ -66,7 +66,7 @@
             @if ($showForgotPassword)
               <a href="{{ route('password.request') }}" class="keystone-link">Forgot password?</a>
             @endif
-            @if ($showRegisterLink && config('keystone.features.registration'))
+            @if ($showRegisterLink)
               <a href="{{ route('register') }}" class="keystone-link">Create account</a>
             @endif
         </div>

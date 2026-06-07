@@ -2,13 +2,16 @@
 
 namespace BSPDX\Keystone\Http\Controllers;
 
-use Illuminate\Http\Request;
+use BSPDX\Keystone\Http\Controllers\Concerns\ThrottlesAuthentication;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class LoginController
 {
+    use ThrottlesAuthentication;
+
     /**
      * Get available authentication methods for an email.
      *
@@ -19,12 +22,16 @@ class LoginController
     {
         $request->validate(['email' => 'required|email']);
 
+        if (! config('keystone.features.passwordless_login', false)) {
+            return response()->json(['methods' => ['password']]);
+        }
+
         // Get the user model class from config or default to App\Models\User
         $userModel = config('auth.providers.users.model', 'App\\Models\\User');
 
         $user = $userModel::where('email', $request->email)->first();
 
-        if (!$user) {
+        if (! $user) {
             // Don't reveal if user exists - return default methods
             return response()->json(['methods' => ['password']]);
         }
@@ -48,10 +55,19 @@ class LoginController
      */
     public function authenticateWithTotp(Request $request): RedirectResponse|JsonResponse
     {
+        abort_if(! config('keystone.features.passwordless_login', false), 404);
+
         $request->validate([
             'email' => 'required|email',
             'totp_code' => 'required|string|size:6',
         ]);
+
+        $throttleKey = $this->throttleKey($request, 'totp-login');
+        $maxAttempts = (int) config('keystone.rate_limiting.max_login_attempts', 5);
+
+        if ($this->hasTooManyAttempts($throttleKey, $maxAttempts)) {
+            return $this->tooManyAttemptsResponse($request, 'email', 'totp-login');
+        }
 
         // Get the user model class from config
         $userModel = config('auth.providers.users.model', 'App\\Models\\User');
@@ -59,25 +75,36 @@ class LoginController
         $user = $userModel::where('email', $request->email)->first();
 
         // Check if user exists and has TOTP login enabled
-        if (!$user || !$user->allow_totp_login || !$user->hasTwoFactorEnabled()) {
+        if (! $user || ! $user->allow_totp_login || ! $user->hasTwoFactorEnabled()) {
+            $this->recordFailedAttempt($throttleKey);
+
             if ($request->wantsJson()) {
                 return response()->json(['message' => 'Invalid credentials.'], 401);
             }
+
             return back()->withErrors(['email' => 'Invalid credentials.']);
         }
 
         // Verify the TOTP code
-        $valid = app('pragmarx.google2fa')->verifyKey(
+        $google2fa = app('pragmarx.google2fa');
+        $google2fa->setWindow(config('keystone.two_factor.window', 1));
+
+        $valid = $google2fa->verifyKey(
             decrypt($user->two_factor_secret),
             $request->totp_code
         );
 
-        if (!$valid) {
+        if (! $valid) {
+            $this->recordFailedAttempt($throttleKey);
+
             if ($request->wantsJson()) {
                 return response()->json(['message' => 'Invalid authentication code.'], 401);
             }
+
             return back()->withErrors(['totp_code' => 'Invalid authentication code.']);
         }
+
+        $this->clearAttempts($throttleKey);
 
         // Log the user in
         Auth::login($user, $request->boolean('remember'));

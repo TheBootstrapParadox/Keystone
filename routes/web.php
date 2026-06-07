@@ -1,10 +1,11 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use BSPDX\Keystone\Http\Controllers\TwoFactorAuthController;
+use BSPDX\Keystone\Http\Controllers\AccountDeletionController;
+use BSPDX\Keystone\Http\Controllers\LoginController;
 use BSPDX\Keystone\Http\Controllers\PasskeyAuthController;
 use BSPDX\Keystone\Http\Controllers\ProfileController;
-use BSPDX\Keystone\Http\Controllers\LoginController;
+use BSPDX\Keystone\Http\Controllers\TwoFactorAuthController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -28,12 +29,19 @@ Route::middleware(config('keystone.profile.middleware', ['web', 'auth']))->group
     Route::get(config('keystone.profile.path', '/profile'), [ProfileController::class, 'show'])
         ->name('keystone.profile.show');
 
-    Route::put(config('keystone.profile.path', '/profile') . '/auth-preferences', [ProfileController::class, 'updateAuthPreferences'])
+    Route::put(config('keystone.profile.path', '/profile').'/auth-preferences', [ProfileController::class, 'updateAuthPreferences'])
+        ->middleware('password-confirm')
         ->name('keystone.profile.auth-preferences.update');
 });
 
+// Account Deletion
+Route::middleware(['web', 'auth', 'keystone.feature:account_deletion', 'password-confirm'])->group(function () {
+    Route::delete('/user/account', [AccountDeletionController::class, 'destroy'])
+        ->name('account.delete');
+});
+
 // Passwordless Login Routes (guest)
-Route::middleware(['web', 'guest'])->group(function () {
+Route::middleware(['web', 'guest', 'keystone.feature:passwordless_login'])->group(function () {
     // Get available auth methods for an email
     Route::post('/login/methods', [LoginController::class, 'getAuthMethods'])
         ->name('keystone.login.methods');
@@ -44,32 +52,33 @@ Route::middleware(['web', 'guest'])->group(function () {
 });
 
 // Two-Factor Authentication Routes
-Route::middleware(['web', 'auth'])->group(function () {
-    // Enable 2FA
+Route::middleware(['web', 'auth', 'keystone.feature:two_factor'])->group(function () {
+    // Enable 2FA setup view (read-only, no password confirm needed)
     Route::get('/user/two-factor-authentication', [TwoFactorAuthController::class, 'create'])
         ->name('two-factor.enable');
 
-    Route::post('/user/two-factor-authentication', [TwoFactorAuthController::class, 'store'])
-        ->name('two-factor.store');
-
-    // Confirm 2FA
-    Route::post('/user/confirmed-two-factor-authentication', [TwoFactorAuthController::class, 'confirm'])
-        ->name('two-factor.confirm');
-
-    // Disable 2FA
-    Route::delete('/user/two-factor-authentication', [TwoFactorAuthController::class, 'destroy'])
-        ->name('two-factor.destroy');
-
-    // Recovery codes
+    // Recovery codes (read-only)
     Route::get('/user/two-factor-recovery-codes', [TwoFactorAuthController::class, 'recoveryCodes'])
         ->name('two-factor.recovery-codes');
 
-    Route::post('/user/two-factor-recovery-codes', [TwoFactorAuthController::class, 'regenerateRecoveryCodes'])
-        ->name('two-factor.recovery-codes.regenerate');
+    // Mutating 2FA actions require password confirmation
+    Route::middleware('password-confirm')->group(function () {
+        Route::post('/user/two-factor-authentication', [TwoFactorAuthController::class, 'store'])
+            ->name('two-factor.store');
+
+        Route::post('/user/confirmed-two-factor-authentication', [TwoFactorAuthController::class, 'confirm'])
+            ->name('two-factor.confirm');
+
+        Route::delete('/user/two-factor-authentication', [TwoFactorAuthController::class, 'destroy'])
+            ->name('two-factor.destroy');
+
+        Route::post('/user/two-factor-recovery-codes', [TwoFactorAuthController::class, 'regenerateRecoveryCodes'])
+            ->name('two-factor.recovery-codes.regenerate');
+    });
 });
 
 // Passkey Routes
-Route::middleware(['web'])->group(function () {
+Route::middleware(['web', 'keystone.feature:passkeys'])->group(function () {
     // Passkey login (guest)
     Route::get('/passkey/login', [PasskeyAuthController::class, 'loginView'])
         ->name('passkeys.login')
@@ -85,18 +94,34 @@ Route::middleware(['web'])->group(function () {
 
     // Passkey management (authenticated)
     Route::middleware(['auth'])->group(function () {
+        // Read-only passkey views (no password confirm needed)
         Route::get('/user/passkeys', [PasskeyAuthController::class, 'registerView'])
             ->name('passkeys.register.view');
 
         Route::post('/user/passkeys/options', [PasskeyAuthController::class, 'registerOptions'])
             ->name('passkeys.register.options');
 
-        Route::post('/user/passkeys', [PasskeyAuthController::class, 'store'])
-            ->name('passkeys.register');
+        // Mutating passkey actions require password confirmation
+        Route::middleware('password-confirm')->group(function () {
+            Route::post('/user/passkeys', [PasskeyAuthController::class, 'store'])
+                ->name('passkeys.register');
 
-        Route::delete('/user/passkeys/{passkey}', [PasskeyAuthController::class, 'destroy'])
-            ->name('passkeys.destroy');
+            Route::delete('/user/passkeys/{passkeyId}', [PasskeyAuthController::class, 'destroy'])
+                ->name('passkeys.destroy');
+        });
     });
+});
+
+// Passkey Second-Factor Challenge Routes (authenticated users only)
+Route::middleware(['web', 'auth', 'keystone.feature:passkey_2fa'])->group(function () {
+    Route::get('/passkey/2fa/challenge', [PasskeyAuthController::class, 'twofaChallengeView'])
+        ->name('passkeys.2fa.challenge');
+
+    Route::post('/passkey/2fa/options', [PasskeyAuthController::class, 'twofaChallengeOptions'])
+        ->name('passkeys.2fa.options');
+
+    Route::post('/passkey/2fa/verify', [PasskeyAuthController::class, 'twofaVerify'])
+        ->name('passkeys.2fa.verify');
 });
 
 // Example protected routes using Keystone middleware

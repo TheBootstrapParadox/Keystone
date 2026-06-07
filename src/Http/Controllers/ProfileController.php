@@ -22,9 +22,8 @@ class ProfileController
             'passkeys' => $user->passkeys ?? collect(),
         ];
 
-        // Include roles/permissions if using Spatie and feature enabled
-        if (config('keystone.features.show_permissions') && method_exists($user, 'getRoleNames')) {
-            $data['roles'] = $user->getRoleNames();
+        if (config('keystone.features.show_permissions')) {
+            $data['roles'] = $user->roles->pluck('name');
             $data['permissions'] = $user->getAllPermissions()->pluck('name');
         }
 

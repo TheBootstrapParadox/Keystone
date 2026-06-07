@@ -2,6 +2,12 @@
 
 namespace BSPDX\Keystone\Traits;
 
+use BaconQrCode\Renderer\Color\Rgb;
+use BaconQrCode\Renderer\Image\SvgImageBackEnd;
+use BaconQrCode\Renderer\ImageRenderer;
+use BaconQrCode\Renderer\RendererStyle\Fill;
+use BaconQrCode\Renderer\RendererStyle\RendererStyle;
+use BaconQrCode\Writer;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Models\KeystonePermission;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,6 +24,28 @@ trait HasKeystone
     use HasApiTokens;
     use TwoFactorAuthenticatable;
     use InteractsWithPasskeys;
+
+    // ============================================
+    // TWO-FACTOR AUTHENTICATION OVERRIDES
+    // ============================================
+
+    /**
+     * Get the QR code SVG using the size from keystone.two_factor.qr_code_size.
+     * Overrides Fortify's TwoFactorAuthenticatable::twoFactorQrCodeSvg() which hardcodes 192px.
+     */
+    public function twoFactorQrCodeSvg(): string
+    {
+        $size = config('keystone.two_factor.qr_code_size', 200);
+
+        $svg = (new Writer(
+            new ImageRenderer(
+                new RendererStyle($size, 0, null, null, Fill::uniformColor(new Rgb(255, 255, 255), new Rgb(45, 55, 72))),
+                new SvgImageBackEnd
+            )
+        ))->writeString($this->twoFactorQrCodeUrl());
+
+        return trim(substr($svg, strpos($svg, "\n") + 1));
+    }
 
     // ============================================
     // QUERY SCOPES
