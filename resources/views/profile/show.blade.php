@@ -103,12 +103,10 @@
     @endif
 
     {{-- Password Change --}}
-    @if(config('keystone.features.update_passwords'))
     <section class="keystone-profile-section">
         <h2>Change Password</h2>
         @include('keystone::components.profile.password-form')
     </section>
-    @endif
 
     {{-- Two-Factor Authentication --}}
     @if(config('keystone.features.two_factor'))

@@ -7,6 +7,7 @@ use Illuminate\Contracts\Auth\Access\Gate;
 use BSPDX\Keystone\Http\Middleware\EnsureHasRole;
 use BSPDX\Keystone\Http\Middleware\EnsureHasPermission;
 use BSPDX\Keystone\Http\Middleware\EnsureTwoFactorEnabled;
+use BSPDX\Keystone\Http\Middleware\RequirePasswordConfirm;
 use BSPDX\Keystone\Services\PermissionRegistrar;
 
 class KeystoneServiceProvider extends ServiceProvider {
@@ -148,6 +149,7 @@ class KeystoneServiceProvider extends ServiceProvider {
         $router->aliasMiddleware('role', EnsureHasRole::class);
         $router->aliasMiddleware('permission', EnsureHasPermission::class);
         $router->aliasMiddleware('2fa', EnsureTwoFactorEnabled::class);
+        $router->aliasMiddleware('password-confirm', RequirePasswordConfirm::class);
 
         // Register Blade components
         $this->loadViewComponentsAs('keystone', [

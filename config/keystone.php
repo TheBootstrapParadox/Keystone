@@ -49,9 +49,6 @@ return [
     */
 
     'features' => [
-        // Enable user registration
-        'registration' => true,
-
         // Enable email verification
         'email_verification' => true,
 
@@ -72,9 +69,6 @@ return [
 
         // Enable profile information updates
         'update_profile' => true,
-
-        // Enable password updates
-        'update_passwords' => true,
 
         // Enable account deletion
         'account_deletion' => false,
