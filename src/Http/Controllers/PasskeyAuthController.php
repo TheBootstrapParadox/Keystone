@@ -226,4 +226,102 @@ class PasskeyAuthController
 
         return response()->json(['passkeys' => $passkeys]);
     }
+
+    /**
+     * Display the passkey second-factor challenge view.
+     */
+    public function twofaChallengeView(): \Illuminate\Contracts\View\View
+    {
+        abort_if(! config('keystone.features.passkey_2fa', false), 404);
+
+        return view('keystone::passkeys.2fa-challenge');
+    }
+
+    protected const SESSION_2FA_OPTIONS = 'passkey_2fa_options';
+
+    /**
+     * Generate passkey authentication options for the second-factor challenge.
+     *
+     * Stores the challenge in the session so twofaVerify() can retrieve it
+     * server-side, preventing client-supplied or replayed challenges.
+     */
+    public function twofaChallengeOptions(Request $request): JsonResponse
+    {
+        abort_if(! config('keystone.features.passkey_2fa', false), 404);
+
+        $optionsJson = $this->passkeyService->generateAuthenticationOptions();
+
+        // Store server-side so the client cannot supply or replay a challenge.
+        $request->session()->put(self::SESSION_2FA_OPTIONS, $optionsJson);
+
+        return response()->json(json_decode($optionsJson, true));
+    }
+
+    /**
+     * Verify a passkey as a second factor for an already-authenticated user.
+     *
+     * Challenge is pulled from the session (not the request body) to prevent
+     * client-supplied or replayed challenges. The stored challenge is consumed
+     * on first use so it cannot be replayed.
+     *
+     * Ownership is verified: the resolved passkey must belong to the
+     * authenticated user, preventing cross-account 2FA flag injection.
+     */
+    public function twofaVerify(Request $request): RedirectResponse|JsonResponse
+    {
+        abort_if(! config('keystone.features.passkey_2fa', false), 404);
+
+        $validated = $request->validate([
+            'credential' => ['required'],
+        ]);
+
+        // Pull the challenge from the session (single-use — prevents replay).
+        $optionsJson = $request->session()->pull(self::SESSION_2FA_OPTIONS);
+
+        if (! $optionsJson) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => 'No active challenge. Please request a new one.'], 422);
+            }
+
+            return redirect()->back()->withErrors(['passkey' => 'No active challenge. Please request a new one.']);
+        }
+
+        $credentialJson = is_string($validated['credential'])
+            ? $validated['credential']
+            : json_encode($validated['credential']);
+
+        try {
+            $passkey = $this->passkeyService->findPasskeyToAuthenticate($credentialJson, $optionsJson);
+
+            if (! $passkey) {
+                throw new \Exception('Invalid passkey credential.');
+            }
+
+            // Verify the passkey belongs to the authenticated user.
+            if ((string) $passkey->authenticatable_id !== (string) $request->user()->getKey()) {
+                throw new \Exception('Invalid passkey credential.');
+            }
+
+            $request->session()->put('auth.passkey_2fa_verified_at', now());
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Passkey verification successful.',
+                    'redirect' => config('keystone.redirects.login', '/dashboard'),
+                ]);
+            }
+
+            return redirect()->intended(config('keystone.redirects.login', '/dashboard'));
+        } catch (\Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Verification failed: '.$e->getMessage(),
+                ], 401);
+            }
+
+            return redirect()->back()->withErrors([
+                'passkey' => 'Verification failed. Please try again.',
+            ]);
+        }
+    }
 }

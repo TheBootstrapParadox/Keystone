@@ -74,7 +74,10 @@ class LoginController
         }
 
         // Verify the TOTP code
-        $valid = app('pragmarx.google2fa')->verifyKey(
+        $google2fa = app('pragmarx.google2fa');
+        $google2fa->setWindow(config('keystone.two_factor.window', 1));
+
+        $valid = $google2fa->verifyKey(
             decrypt($user->two_factor_secret),
             $request->totp_code
         );

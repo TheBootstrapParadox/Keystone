@@ -1,5 +1,6 @@
 <?php
 
+use BSPDX\Keystone\Http\Controllers\AccountDeletionController;
 use BSPDX\Keystone\Http\Controllers\LoginController;
 use BSPDX\Keystone\Http\Controllers\PasskeyAuthController;
 use BSPDX\Keystone\Http\Controllers\ProfileController;
@@ -31,6 +32,12 @@ Route::middleware(config('keystone.profile.middleware', ['web', 'auth']))->group
     Route::put(config('keystone.profile.path', '/profile').'/auth-preferences', [ProfileController::class, 'updateAuthPreferences'])
         ->middleware('password-confirm')
         ->name('keystone.profile.auth-preferences.update');
+});
+
+// Account Deletion
+Route::middleware(['web', 'auth', 'keystone.feature:account_deletion', 'password-confirm'])->group(function () {
+    Route::delete('/user/account', [AccountDeletionController::class, 'destroy'])
+        ->name('account.delete');
 });
 
 // Passwordless Login Routes (guest)
@@ -103,6 +110,18 @@ Route::middleware(['web', 'keystone.feature:passkeys'])->group(function () {
                 ->name('passkeys.destroy');
         });
     });
+});
+
+// Passkey Second-Factor Challenge Routes (authenticated users only)
+Route::middleware(['web', 'auth', 'keystone.feature:passkey_2fa'])->group(function () {
+    Route::get('/passkey/2fa/challenge', [PasskeyAuthController::class, 'twofaChallengeView'])
+        ->name('passkeys.2fa.challenge');
+
+    Route::post('/passkey/2fa/options', [PasskeyAuthController::class, 'twofaChallengeOptions'])
+        ->name('passkeys.2fa.options');
+
+    Route::post('/passkey/2fa/verify', [PasskeyAuthController::class, 'twofaVerify'])
+        ->name('passkeys.2fa.verify');
 });
 
 // Example protected routes using Keystone middleware

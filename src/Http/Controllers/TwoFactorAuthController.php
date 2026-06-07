@@ -65,7 +65,10 @@ class TwoFactorAuthController
 
         $user = $request->user();
 
-        if (! app('pragmarx.google2fa')->verifyKey(
+        $google2fa = app('pragmarx.google2fa');
+        $google2fa->setWindow(config('keystone.two_factor.window', 1));
+
+        if (! $google2fa->verifyKey(
             decrypt($user->two_factor_secret),
             $request->code
         )) {

@@ -14,6 +14,7 @@ use BSPDX\Keystone\Http\Middleware\EnsureFeatureEnabled;
 use BSPDX\Keystone\Http\Middleware\EnsureHasPermission;
 use BSPDX\Keystone\Http\Middleware\EnsureHasRole;
 use BSPDX\Keystone\Http\Middleware\EnsureTwoFactorEnabled;
+use BSPDX\Keystone\Http\Middleware\RequirePasskey2FA;
 use BSPDX\Keystone\Http\Middleware\RequirePasswordConfirm;
 use BSPDX\Keystone\Models\Passkey;
 use BSPDX\Keystone\Services\AuthorizationService;
@@ -190,6 +191,7 @@ class KeystoneServiceProvider extends ServiceProvider
         $router->aliasMiddleware('permission', EnsureHasPermission::class);
         $router->aliasMiddleware('2fa', EnsureTwoFactorEnabled::class);
         $router->aliasMiddleware('password-confirm', RequirePasswordConfirm::class);
+        $router->aliasMiddleware('passkey-2fa', RequirePasskey2FA::class);
 
         // Register Blade components
         $this->loadViewComponentsAs('keystone', [
