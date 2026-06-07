@@ -88,7 +88,7 @@ class KeystoneRole extends Model
     public function users(): MorphToMany
     {
         return $this->morphedByMany(
-            config('keystone.user_model', 'App\Models\User'),
+            config('keystone.user.model', '\BSPDX\Keystone\Models\KeystoneUser'),
             'model',
             'model_has_roles',
             'role_id',

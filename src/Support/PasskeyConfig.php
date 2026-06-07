@@ -25,7 +25,7 @@ class PasskeyConfig
     /**
      * Get the configured passkey model class.
      *
-     * @return class-string<\Spatie\LaravelPasskeys\Models\Passkey>
+     * @return class-string<\BSPDX\Keystone\Models\Passkey>
      */
     public static function getPasskeyModel(): string
     {

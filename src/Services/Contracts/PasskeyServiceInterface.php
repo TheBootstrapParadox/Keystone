@@ -3,7 +3,7 @@
 namespace BSPDX\Keystone\Services\Contracts;
 
 use Illuminate\Contracts\Auth\Authenticatable;
-use Spatie\LaravelPasskeys\Models\Passkey;
+use BSPDX\Keystone\Models\Passkey;
 
 interface PasskeyServiceInterface
 {

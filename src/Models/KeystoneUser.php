@@ -5,7 +5,7 @@ namespace BSPDX\Keystone\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Spatie\LaravelPasskeys\Contracts\HasPasskeys;
+use BSPDX\Keystone\Contracts\HasPasskeys;
 use BSPDX\Keystone\Traits\HasKeystone;
 
 class KeystoneUser extends Authenticatable implements HasPasskeys, MustVerifyEmail
