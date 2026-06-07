@@ -49,28 +49,16 @@ return [
     */
 
     'features' => [
-        // Enable email verification
-        'email_verification' => true,
-
-        // Enable password reset functionality
-        'password_reset' => true,
-
         // Enable two-factor authentication (TOTP via Fortify)
         'two_factor' => true,
 
         // Enable passkey authentication
         'passkeys' => true,
 
-        // Enable passkey as a second factor
-        'passkey_2fa' => true,
+        // Enable passkey as a second factor (reserved — not yet implemented)
+        'passkey_2fa' => false,
 
-        // Enable API token authentication (Sanctum)
-        'api_tokens' => true,
-
-        // Enable profile information updates
-        'update_profile' => true,
-
-        // Enable account deletion
+        // Enable account deletion endpoint (reserved — not yet implemented)
         'account_deletion' => false,
 
         // Allow users to configure passwordless login options
@@ -101,14 +89,6 @@ return [
 
         // Super admin role that bypasses all permission checks
         'super_admin_role' => 'super-admin',
-
-        // Default permissions for API access
-        'api_permissions' => [
-            'view-roles',
-            'view-permissions',
-            'assign-roles',
-            'assign-permissions',
-        ],
     ],
 
     /*
@@ -183,11 +163,6 @@ return [
 
     'redirects' => [
         'login' => '/dashboard',
-        'logout' => '/',
-        'register' => '/dashboard',
-        'password_reset' => '/login',
-        'email_verification' => '/dashboard',
-        'two_factor_challenge' => '/dashboard',
     ],
 
     /*
@@ -223,12 +198,6 @@ return [
     */
 
     'session' => [
-        // Regenerate session ID after login
-        'regenerate_on_login' => true,
-
-        // Remember me duration (in minutes)
-        'remember_duration' => 60 * 24 * 30, // 30 days
-
         // Require password confirmation for sensitive operations (in minutes)
         'password_timeout' => 10800, // 3 hours
     ],
