@@ -99,7 +99,7 @@ Route::middleware(['web'])->group(function () {
             Route::post('/user/passkeys', [PasskeyAuthController::class, 'store'])
                 ->name('passkeys.register');
 
-            Route::delete('/user/passkeys/{passkey}', [PasskeyAuthController::class, 'destroy'])
+            Route::delete('/user/passkeys/{passkeyId}', [PasskeyAuthController::class, 'destroy'])
                 ->name('passkeys.destroy');
         });
     });

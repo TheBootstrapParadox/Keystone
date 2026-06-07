@@ -17,6 +17,15 @@ class RequirePasswordConfirmTest extends TestCase
             ->get('/test-password-confirm', function () {
                 return response()->json(['message' => 'ok']);
             })->name('test.password-confirm');
+
+        // Used to test password-confirm on DELETE routes with a URL parameter.
+        // We cannot use the real /user/passkeys/{passkey} route here because
+        // laravel/passkeys (a Fortify dependency) registers a global Route::bind('passkey', ...)
+        // binding that fires a 404 before middleware runs when the passkey ID does not exist.
+        Route::middleware(['web', 'auth', 'password-confirm'])
+            ->delete('/test-passkey-delete/{passkeyId}', function () {
+                return response()->json(['message' => 'ok']);
+            })->name('test.passkey.delete');
     }
 
     #[Test]
@@ -146,7 +155,7 @@ class RequirePasswordConfirmTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->deleteJson('/user/passkeys/some-passkey-id')
+            ->deleteJson('/test-passkey-delete/some-passkey-id')
             ->assertStatus(423);
     }
 }

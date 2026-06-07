@@ -20,6 +20,7 @@ class KeystoneServiceProvider extends ServiceProvider {
             'keystone'
         );
 
+
         config(['passkeys.models.passkey' => \BSPDX\Keystone\Models\Passkey::class]);
 
         // Register service interfaces
