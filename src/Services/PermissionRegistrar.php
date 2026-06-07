@@ -31,21 +31,12 @@ class PermissionRegistrar
      */
     protected string $cacheKey = 'keystone.permissions.all';
 
-    /**
-     * Cache expiration time in seconds (24 hours).
-     *
-     * @var int
-     */
-    protected int $cacheExpiration = 86400;
+    protected int $cacheExpiration;
 
-    /**
-     * Create a new PermissionRegistrar instance.
-     *
-     * @param CacheRepository $cache
-     */
     public function __construct(CacheRepository $cache)
     {
         $this->cache = $cache;
+        $this->cacheExpiration = config('keystone.rbac.cache_expiration', 86400);
     }
 
     /**
