@@ -49,7 +49,16 @@ class KeystoneServiceProvider extends ServiceProvider
             'keystone'
         );
 
-        config(['passkeys.models.passkey' => Passkey::class]);
+        config([
+            'passkeys.models.passkey'      => Passkey::class,
+            'passkeys.relying_party.name'  => config('keystone.passkey.rp_name'),
+            'passkeys.relying_party.id'    => config('keystone.passkey.rp_id'),
+        ]);
+
+        $this->app->bind(
+            \Spatie\LaravelPasskeys\Actions\GeneratePasskeyRegisterOptionsAction::class,
+            \BSPDX\Keystone\Actions\GeneratePasskeyRegisterOptionsAction::class,
+        );
 
         // Register service interfaces
         $this->app->singleton(

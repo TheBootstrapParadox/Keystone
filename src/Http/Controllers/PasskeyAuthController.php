@@ -39,6 +39,14 @@ class PasskeyAuthController
     {
         abort_if(! config('keystone.features.passkeys', false), 404);
 
+        if (! config('keystone.passkey.allow_multiple', true) && $request->user()->passkeys()->exists()) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => 'Only one passkey is allowed per account.'], 422);
+            }
+
+            return redirect()->back()->withErrors(['passkey' => 'Only one passkey is allowed per account.']);
+        }
+
         $optionsJson = $this->passkeyService->generateRegisterOptions($request->user());
 
         // Store options in session for validation during registration
@@ -53,6 +61,14 @@ class PasskeyAuthController
     public function store(Request $request): RedirectResponse|JsonResponse
     {
         abort_if(! config('keystone.features.passkeys', false), 404);
+
+        if (! config('keystone.passkey.allow_multiple', true) && $request->user()->passkeys()->exists()) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => 'Only one passkey is allowed per account.'], 422);
+            }
+
+            return redirect()->back()->withErrors(['passkey' => 'Only one passkey is allowed per account.']);
+        }
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
