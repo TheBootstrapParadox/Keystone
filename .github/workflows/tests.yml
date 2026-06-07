@@ -3,8 +3,9 @@ name: Tests
 on:
   push:
     branches:
-      - main
-      - "*.x"
+      - develop
+      - bugfix/**
+      - feature/**
   pull_request:
   schedule:
     - cron: "0 0 * * *"
