@@ -9,7 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.8.0] - 2026.05-25
+## [0.8.1] - 2026-06-07
+
+This ia purely a DX change, so that the user does not have to concern themself with Spatie types when working with the passkey service. The `bspdx/keystone` package wraps `spatie/laravel-passkeys` internally, but previously leaked Spatie types into the public API surface. Any consuming app that type-hints `PasskeyServiceInterface` methods or inspects `KeystoneUser`'s interface chain would see `Spatie\LaravelPasskeys\Models\Passkey` and `Spatie\LaravelPasskeys\Contracts\HasPasskeys`. The goal is to ensure consuming apps only ever reference `BSPDX\Keystone\*` namespaces.
+
+### Changed
+
+- Introduced `BSPDX\Keystone\Models\Passkey` model extending `Spatie\LaravelPasskeys\Models\Passkey`, giving the package a Keystone-owned public type for passkey records
+- `PasskeyServiceInterface` method signatures now reference `BSPDX\Keystone\Models\Passkey` instead of `Spatie\LaravelPasskeys\Models\Passkey` — consuming apps no longer need to import any Spatie class when working with the passkey service
+- `KeystoneUser` now implements `BSPDX\Keystone\Contracts\HasPasskeys` instead of `Spatie\LaravelPasskeys\Contracts\HasPasskeys` directly
+- `KeystoneServiceProvider` now registers `BSPDX\Keystone\Models\Passkey` as the active passkey model via `passkeys.models.passkey`, ensuring Spatie actions instantiate the Keystone-namespaced type at runtime
+- `PasskeyConfig::getPasskeyModel()` return type docblock updated to reference `BSPDX\Keystone\Models\Passkey`
+- Updated `USER_MODEL.md` documentation to reflect the new passkey model and API changes
+- Updated `README.md` to reflect the new passkey model and API changes, and to fix any lingering references to Spatie Permissions package since it was replaced in 0.8.0.
+
+---
+
+## [0.8.0] - 2026-05-25
+
+This update removes the `spatie/laravel-permission` package dependency and replaces it with a custom RBAC implementation built from the ground up for multi-tenancy. The new system provides full control over permission checking logic, better performance, and a simpler mental model while maintaining the same method signatures for backward compatibility.
 
 ### Added
 
@@ -195,6 +213,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.2] - 2026-02-01
 
+This minor update includes tenant_id to roles and permissions, allowing for tenant-scoped RBAC. 
+
 ### Changed
 
 - The nullable `tenant_id` UUID column is now also added to:
@@ -208,6 +228,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [0.7.1] - 2026-02-01
+
+This patch offers better multi-tenancy support.
 
 ### Changed
 

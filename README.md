@@ -84,8 +84,8 @@ php artisan migrate
 This will create tables for:
 
 -   Two-factor authentication columns in `users` table
--   Roles and permissions (Spatie)
--   Passkeys (Spatie)
+-   Roles and permissions (custom RBAC)
+-   Passkeys
 -   Personal access tokens (Sanctum)
 
 ### Step 4: Seed Demo Data (Optional)
@@ -530,13 +530,13 @@ All services are registered in Laravel's service container with interface bindin
 
 ### Models
 
-Keystone provides its own model classes that extend Spatie's models:
+Keystone provides its own model classes under the `BSPDX\Keystone\Models` namespace:
 
-- `BSPDX\Keystone\Models\KeystoneRole` - Extends Spatie's Role model
-  - Adds `isSuperAdmin()` method
-- `BSPDX\Keystone\Models\KeystonePermission` - Extends Spatie's Permission model
+- `BSPDX\Keystone\Models\KeystoneRole` - Custom role model with tenant scoping and `isSuperAdmin()`
+- `BSPDX\Keystone\Models\KeystonePermission` - Custom permission model with tenant scoping
+- `BSPDX\Keystone\Models\Passkey` - Passkey record model (wraps the underlying passkey backend)
 
-All type hints use these Keystone models, providing a consistent `BSPDX\Keystone` namespace throughout your application.
+All public APIs use these Keystone models exclusively — no third-party model classes appear in method signatures or return types.
 
 ### Benefits
 

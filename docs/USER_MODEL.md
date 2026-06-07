@@ -11,7 +11,7 @@ By default, Keystone uses your application's User model via `config('auth.provid
 Your User model should:
 - Extend `Illuminate\Foundation\Auth\User`
 - Use the `HasKeystone` trait
-- Implement `Spatie\LaravelPasskeys\Contracts\HasPasskeys` contract
+- Implement `BSPDX\Keystone\Contracts\HasPasskeys` contract
 - Implement `Illuminate\Contracts\Auth\MustVerifyEmail` contract
 
 ### Example
@@ -23,7 +23,7 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Spatie\LaravelPasskeys\Contracts\HasPasskeys;
+use BSPDX\Keystone\Contracts\HasPasskeys;
 use BSPDX\Keystone\Traits\HasKeystone;
 
 class User extends Authenticatable implements HasPasskeys, MustVerifyEmail
