@@ -17,9 +17,6 @@ class MultiTenantPermissionTest extends TestCase
         // Enable multi-tenancy for these tests
         config(['keystone.features.multi_tenant' => true]);
 
-        // Ensure Spatie Permission uses array cache in tests
-        config(['keystone.permission.cache.store' => 'array']);
-
         // Clear permission cache
         app(\BSPDX\Keystone\Services\Contracts\CacheServiceInterface::class)->clearPermissionCache();
     }

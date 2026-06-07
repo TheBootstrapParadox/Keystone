@@ -22,13 +22,12 @@ return new class extends Migration
         $authenticatableClass = PasskeyConfig::getAuthenticatableModel();
         $authenticatable = new $authenticatableClass;
         $useUuids = method_exists($authenticatable, 'uniqueIds');
-
-        $columnNames = config('keystone.permission.column_names');
-        $teamForeignKey = $columnNames['team_foreign_key']; // Will be 'tenant_id'
-        $tableNames = config('keystone.permission.table_names');
+        $teamForeignKey = 'tenant_id';
+        $modelHasRolesTable = 'model_has_roles';
+        $modelHasPermissionsTable = 'model_has_permissions';
 
         // Add tenant_id to model_has_roles if not exists
-        Schema::table($tableNames['model_has_roles'], function (Blueprint $table) use ($teamForeignKey, $useUuids) {
+        Schema::table($modelHasRolesTable, function (Blueprint $table) use ($teamForeignKey, $useUuids) {
             if (!Schema::hasColumn('model_has_roles', $teamForeignKey)) {
                 if ($useUuids) {
                     $table->uuid($teamForeignKey)->nullable()->after('model_id');
@@ -40,7 +39,7 @@ return new class extends Migration
         });
 
         // Add tenant_id to model_has_permissions if not exists
-        Schema::table($tableNames['model_has_permissions'], function (Blueprint $table) use ($teamForeignKey, $useUuids) {
+        Schema::table($modelHasPermissionsTable, function (Blueprint $table) use ($teamForeignKey, $useUuids) {
             if (!Schema::hasColumn('model_has_permissions', $teamForeignKey)) {
                 if ($useUuids) {
                     $table->uuid($teamForeignKey)->nullable()->after('model_id');
@@ -59,22 +58,22 @@ return new class extends Migration
         if ($driverName === 'sqlite') {
             // SQLite-compatible syntax using subquery
             DB::statement("
-                UPDATE {$tableNames['model_has_roles']}
+                UPDATE {$modelHasRolesTable}
                 SET {$teamForeignKey} = (
                     SELECT tenant_id FROM {$userTableName}
-                    WHERE {$userTableName}.id = {$tableNames['model_has_roles']}.model_id
-                    AND {$tableNames['model_has_roles']}.model_type LIKE '%User'
+                    WHERE {$userTableName}.id = {$modelHasRolesTable}.model_id
+                    AND {$modelHasRolesTable}.model_type LIKE '%User'
                 )
                 WHERE EXISTS (
                     SELECT 1 FROM {$userTableName}
-                    WHERE {$userTableName}.id = {$tableNames['model_has_roles']}.model_id
+                    WHERE {$userTableName}.id = {$modelHasRolesTable}.model_id
                     AND {$userTableName}.tenant_id IS NOT NULL
                 )
             ");
         } else {
             // MySQL/PostgreSQL syntax with JOIN
             DB::statement("
-                UPDATE {$tableNames['model_has_roles']} mhr
+                UPDATE {$modelHasRolesTable} mhr
                 JOIN {$userTableName} u ON mhr.model_id = u.id AND mhr.model_type LIKE '%User'
                 SET mhr.{$teamForeignKey} = u.tenant_id
                 WHERE u.tenant_id IS NOT NULL
@@ -85,22 +84,22 @@ return new class extends Migration
         if ($driverName === 'sqlite') {
             // SQLite-compatible syntax using subquery
             DB::statement("
-                UPDATE {$tableNames['model_has_permissions']}
+                UPDATE {$modelHasPermissionsTable}
                 SET {$teamForeignKey} = (
                     SELECT tenant_id FROM {$userTableName}
-                    WHERE {$userTableName}.id = {$tableNames['model_has_permissions']}.model_id
-                    AND {$tableNames['model_has_permissions']}.model_type LIKE '%User'
+                    WHERE {$userTableName}.id = {$modelHasPermissionsTable}.model_id
+                    AND {$modelHasPermissionsTable}.model_type LIKE '%User'
                 )
                 WHERE EXISTS (
                     SELECT 1 FROM {$userTableName}
-                    WHERE {$userTableName}.id = {$tableNames['model_has_permissions']}.model_id
+                    WHERE {$userTableName}.id = {$modelHasPermissionsTable}.model_id
                     AND {$userTableName}.tenant_id IS NOT NULL
                 )
             ");
         } else {
             // MySQL/PostgreSQL syntax with JOIN
             DB::statement("
-                UPDATE {$tableNames['model_has_permissions']} mhp
+                UPDATE {$modelHasPermissionsTable} mhp
                 JOIN {$userTableName} u ON mhp.model_id = u.id AND mhp.model_type LIKE '%User'
                 SET mhp.{$teamForeignKey} = u.tenant_id
                 WHERE u.tenant_id IS NOT NULL
@@ -118,12 +117,12 @@ return new class extends Migration
             return;
         }
 
-        $columnNames = config('keystone.permission.column_names');
-        $teamForeignKey = $columnNames['team_foreign_key']; // Will be 'tenant_id'
-        $tableNames = config('keystone.permission.table_names');
+        $teamForeignKey = 'tenant_id';
+        $modelHasRolesTable = 'model_has_roles';
+        $modelHasPermissionsTable = 'model_has_permissions';
 
         // Remove tenant_id from model_has_roles
-        Schema::table($tableNames['model_has_roles'], function (Blueprint $table) use ($teamForeignKey) {
+        Schema::table($modelHasRolesTable, function (Blueprint $table) use ($teamForeignKey) {
             if (Schema::hasColumn('model_has_roles', $teamForeignKey)) {
                 $table->dropIndex('model_has_roles_tenant_foreign_key_index');
                 $table->dropColumn($teamForeignKey);
@@ -131,7 +130,7 @@ return new class extends Migration
         });
 
         // Remove tenant_id from model_has_permissions
-        Schema::table($tableNames['model_has_permissions'], function (Blueprint $table) use ($teamForeignKey) {
+        Schema::table($modelHasPermissionsTable, function (Blueprint $table) use ($teamForeignKey) {
             if (Schema::hasColumn('model_has_permissions', $teamForeignKey)) {
                 $table->dropIndex('model_has_permissions_tenant_foreign_key_index');
                 $table->dropColumn($teamForeignKey);

@@ -13,9 +13,6 @@ class HasKeystoneTraitTest extends TestCase
     {
         parent::setUp();
 
-        // Ensure Spatie Permission uses array cache in tests
-        config(['keystone.permission.cache.store' => 'array']);
-
         // Clear permission cache using Keystone's cache service
         app(\BSPDX\Keystone\Services\Contracts\CacheServiceInterface::class)->clearPermissionCache();
     }
