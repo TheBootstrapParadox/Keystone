@@ -294,6 +294,8 @@ if (auth()->user()->isSuperAdmin()) {
 }
 ```
 
+> **Note:** `can()` and Laravel's `Gate` rely on Keystone registering permissions in `KeystoneServiceProvider::registerPermissionsWithGate()`, which is skipped when running in the console (e.g. `php artisan tinker`) to avoid registration during install/migration — it still runs normally during HTTP requests and the test suite. If you're debugging permissions in `tinker` and `can()` always returns `false`, this is why; use `hasPermissionTo()` / `hasRole()` directly instead, which don't depend on Gate registration.
+
 #### Service Layer Approach (Recommended for Controllers)
 
 ```php

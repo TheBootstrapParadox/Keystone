@@ -4,6 +4,18 @@
 
 ---
 
+## [0.10.1] - 2026-08-17
+
+### Fixed
+
+- **BUG:** Single-tenant installs (the default — `KEYSTONE_MULTI_TENANT=false`) threw `SQLSTATE[42S22]: Unknown column 'tenant_id'` on 12 of the 14 public RBAC methods (`roles()`, `permissions()`, `hasRole()`, `assignRole()`, `removeRole()`, `syncRoles()`, `givePermissionTo()`, `hasDirectPermission()`, `revokePermissionTo()`, `syncPermissions()`, `getAllPermissions()`, `KeystoneRole::users()`). `HasKeystone::roles()`/`permissions()` and `KeystoneRole::users()` called `withPivot('tenant_id')` unconditionally, but the `tenant_id` pivot column is only created by the `add_tenant_id_to_pivot_tables` migration when multi-tenancy is enabled. All three relations, plus the write paths in `HasKeystone` that read/write `tenant_id` directly, are now gated behind `config('keystone.features.multi_tenant')`, matching the existing guard already used elsewhere in the trait.
+- Exceptions during Gate permission registration (`KeystoneServiceProvider::registerPermissionsWithGate()`) are now logged via `Log::warning()` instead of silently swallowed — a real failure previously looked identical to a normal skip during install/migration, making `can()` silently return `false` for everyone with no trace of why.
+
+### Testing
+
+- Added `tests/Feature/SingleTenantApiTest.php` and a `phpunit.single-tenant.xml` config (`composer test-single-tenant`) that runs the suite with `KEYSTONE_MULTI_TENANT=false` — the existing suite only ever ran with multi-tenancy enabled, which is why this regression shipped in v0.10.0.
+- All 47 default-suite tests passing (136 assertions); single-tenant regression suite passing (12 tests, 29 assertions).
+
 ## [0.10.0] - 2026-08-17
 
 Keystone no longer provides authentication. Fortify integration, Sanctum, passkeys (WebAuthn),

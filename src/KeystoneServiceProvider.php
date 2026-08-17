@@ -21,6 +21,7 @@ use BSPDX\Keystone\Services\PermissionRegistrar;
 use BSPDX\Keystone\Services\PermissionService;
 use BSPDX\Keystone\Services\RoleService;
 use Illuminate\Contracts\Auth\Access\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
 class KeystoneServiceProvider extends ServiceProvider
@@ -166,8 +167,12 @@ class KeystoneServiceProvider extends ServiceProvider
 
                 $permissionRegistrar->registerPermissions($gate);
             } catch (\Exception $e) {
-                // Silently fail during package installation or when tables don't exist yet
-                // This prevents errors during initial setup
+                // Don't let a missing-table error during install/migration crash the app,
+                // but surface anything else — silent failure here means can() silently
+                // returns false for everyone with no trace of why.
+                Log::warning('Keystone: failed to register permissions with Gate.', [
+                    'exception' => $e,
+                ]);
             }
         }
     }

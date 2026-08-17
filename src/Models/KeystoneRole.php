@@ -89,13 +89,19 @@ class KeystoneRole extends Model
      */
     public function users(): MorphToMany
     {
-        return $this->morphedByMany(
+        $relation = $this->morphedByMany(
             config('keystone.user.model') ?? config('auth.providers.users.model', User::class),
             'model',
             'model_has_roles',
             'role_id',
             'model_id'
-        )->withPivot('tenant_id')->withTimestamps();
+        )->withTimestamps();
+
+        if (config('keystone.features.multi_tenant', false)) {
+            $relation->withPivot('tenant_id');
+        }
+
+        return $relation;
     }
 
     // ============================================

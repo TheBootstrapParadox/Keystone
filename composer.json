@@ -63,6 +63,10 @@
             "@php artisan config:clear --ansi",
             "@php artisan test"
         ],
+        "test-single-tenant": [
+            "@php artisan config:clear --ansi",
+            "./vendor/bin/phpunit -c phpunit.single-tenant.xml"
+        ],
         "version": [
             "@php -r \"echo 'Current version: '; passthru('git describe --tags --abbrev=0 2>/dev/null || echo No version tags yet');\""
         ],

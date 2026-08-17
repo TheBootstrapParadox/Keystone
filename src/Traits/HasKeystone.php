@@ -41,10 +41,11 @@ trait HasKeystone
             'model_has_roles',
             'model_id',
             'role_id'
-        )->withPivot('tenant_id')->withTimestamps();
+        )->withTimestamps();
 
         // Apply tenant filtering on pivot table
         if (config('keystone.features.multi_tenant', false)) {
+            $relation->withPivot('tenant_id');
             if ($this->tenant_id) {
                 // User has a tenant: show both tenant-specific and global roles
                 $relation->wherePivotIn('tenant_id', [$this->tenant_id, null]);
@@ -67,10 +68,11 @@ trait HasKeystone
             'model_has_permissions',
             'model_id',
             'permission_id'
-        )->withPivot('tenant_id')->withTimestamps();
+        )->withTimestamps();
 
         // Apply tenant filtering
         if (config('keystone.features.multi_tenant', false)) {
+            $relation->withPivot('tenant_id');
             if ($this->tenant_id) {
                 // User has a tenant: show both tenant-specific and global permissions
                 $relation->wherePivotIn('tenant_id', [$this->tenant_id, null]);
@@ -93,13 +95,13 @@ trait HasKeystone
     {
         $roleModels = $this->convertToRoleModels($roles);
 
+        $multiTenant = config('keystone.features.multi_tenant', false);
+
         $pivotData = [];
         foreach ($roleModels as $role) {
-            $pivotData[$role->id] = [
-                'tenant_id' => $this->tenant_id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
+            $pivotData[$role->id] = $multiTenant
+                ? ['tenant_id' => $this->tenant_id, 'created_at' => now(), 'updated_at' => now()]
+                : ['created_at' => now(), 'updated_at' => now()];
         }
 
         $this->roles()->syncWithoutDetaching($pivotData);
@@ -117,12 +119,16 @@ trait HasKeystone
         $roleModels = $this->convertToRoleModels($roles);
 
         // Only remove roles from current tenant context
-        DB::table('model_has_roles')
+        $query = DB::table('model_has_roles')
             ->where('model_type', $this->getMorphClass())
             ->where('model_id', $this->id)
-            ->whereIn('role_id', $roleModels->pluck('id'))
-            ->where('tenant_id', $this->tenant_id)
-            ->delete();
+            ->whereIn('role_id', $roleModels->pluck('id'));
+
+        if (config('keystone.features.multi_tenant', false)) {
+            $query->where('tenant_id', $this->tenant_id);
+        }
+
+        $query->delete();
 
         $this->forgetCachedPermissions();
         $this->unsetRelation('roles'); // Force reload of roles relationship
@@ -138,11 +144,15 @@ trait HasKeystone
         $roleModels = $this->convertToRoleModels($roles);
 
         // Remove all current tenant roles
-        DB::table('model_has_roles')
+        $query = DB::table('model_has_roles')
             ->where('model_type', $this->getMorphClass())
-            ->where('model_id', $this->id)
-            ->where('tenant_id', $this->tenant_id)
-            ->delete();
+            ->where('model_id', $this->id);
+
+        if (config('keystone.features.multi_tenant', false)) {
+            $query->where('tenant_id', $this->tenant_id);
+        }
+
+        $query->delete();
 
         // Add new roles
         if ($roleModels->isNotEmpty()) {
@@ -166,13 +176,13 @@ trait HasKeystone
     {
         $permissionModels = $this->convertToPermissionModels($permissions);
 
+        $multiTenant = config('keystone.features.multi_tenant', false);
+
         $pivotData = [];
         foreach ($permissionModels as $permission) {
-            $pivotData[$permission->id] = [
-                'tenant_id' => $this->tenant_id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
+            $pivotData[$permission->id] = $multiTenant
+                ? ['tenant_id' => $this->tenant_id, 'created_at' => now(), 'updated_at' => now()]
+                : ['created_at' => now(), 'updated_at' => now()];
         }
 
         $this->permissions()->syncWithoutDetaching($pivotData);
@@ -189,12 +199,16 @@ trait HasKeystone
     {
         $permissionModels = $this->convertToPermissionModels($permissions);
 
-        DB::table('model_has_permissions')
+        $query = DB::table('model_has_permissions')
             ->where('model_type', $this->getMorphClass())
             ->where('model_id', $this->id)
-            ->whereIn('permission_id', $permissionModels->pluck('id'))
-            ->where('tenant_id', $this->tenant_id)
-            ->delete();
+            ->whereIn('permission_id', $permissionModels->pluck('id'));
+
+        if (config('keystone.features.multi_tenant', false)) {
+            $query->where('tenant_id', $this->tenant_id);
+        }
+
+        $query->delete();
 
         $this->forgetCachedPermissions();
         $this->unsetRelation('permissions'); // Force reload of permissions relationship
@@ -207,11 +221,15 @@ trait HasKeystone
      */
     public function syncPermissions(...$permissions): self
     {
-        DB::table('model_has_permissions')
+        $query = DB::table('model_has_permissions')
             ->where('model_type', $this->getMorphClass())
-            ->where('model_id', $this->id)
-            ->where('tenant_id', $this->tenant_id)
-            ->delete();
+            ->where('model_id', $this->id);
+
+        if (config('keystone.features.multi_tenant', false)) {
+            $query->where('tenant_id', $this->tenant_id);
+        }
+
+        $query->delete();
 
         $permissionModels = $this->convertToPermissionModels($permissions);
         if ($permissionModels->isNotEmpty()) {
