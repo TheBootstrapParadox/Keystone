@@ -41,6 +41,20 @@ if git rev-parse "$VERSION" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Versions must only increment - reject if not greater than the latest existing tag
+LATEST_TAG=$(git tag -l 'v*' | sort -V | tail -1)
+
+if [ -n "$LATEST_TAG" ]; then
+    LATEST_VERSION=${LATEST_TAG#v}
+    NEW_VERSION=${VERSION#v}
+    HIGHEST=$(printf '%s\n%s\n' "$LATEST_VERSION" "$NEW_VERSION" | sort -V | tail -1)
+
+    if [ "$HIGHEST" != "$NEW_VERSION" ]; then
+        echo -e "${RED}Error: $VERSION is not greater than the latest release ($LATEST_TAG). Versions must only increment.${NC}"
+        exit 1
+    fi
+fi
+
 # Check for uncommitted changes
 if ! git diff-index --quiet HEAD --; then
     echo -e "${RED}Error: You have uncommitted changes. Please commit or stash them first.${NC}"
