@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
+use BSPDX\Keystone\Models\KeystonePermission;
+use BSPDX\Keystone\Models\KeystoneRole;
+use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
+use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
-use App\Models\User;
-use BSPDX\Keystone\Models\KeystoneRole;
-use BSPDX\Keystone\Models\KeystonePermission;
 
 class KeystoneTest extends TestCase
 {
@@ -15,10 +17,10 @@ class KeystoneTest extends TestCase
         parent::setUp();
 
         // Clear permission cache using Keystone's cache service
-        app(\BSPDX\Keystone\Services\Contracts\CacheServiceInterface::class)->clearPermissionCache();
+        app(CacheServiceInterface::class)->clearPermissionCache();
 
         // Register test routes for middleware testing
-        \Illuminate\Support\Facades\Route::middleware(['web', 'auth', 'role:admin'])
+        Route::middleware(['web', 'auth', 'role:admin'])
             ->get('/test-admin-route', function () {
                 return response()->json(['message' => 'Success']);
             });
@@ -79,52 +81,6 @@ class KeystoneTest extends TestCase
         $user->assignRole($superAdminRole);
 
         $this->assertTrue($user->isSuperAdmin());
-    }
-
-    #[Test]
-    public function user_can_check_two_factor_status()
-    {
-        $user = User::factory()->create();
-
-        $this->assertFalse($user->hasTwoFactorEnabled());
-
-        // Simulate enabling 2FA
-        $user->forceFill([
-            'two_factor_secret' => encrypt('test-secret'),
-            'two_factor_confirmed_at' => now(),
-        ])->save();
-
-        $this->assertTrue($user->hasTwoFactorEnabled());
-    }
-
-    #[Test]
-    public function user_can_check_if_two_factor_is_required_for_role()
-    {
-        config(['keystone.two_factor.required_for_roles' => ['admin']]);
-
-        $user = User::factory()->create();
-        $adminRole = KeystoneRole::create(['name' => 'admin']);
-
-        $this->assertFalse($user->requires2FA());
-
-        $user->assignRole($adminRole);
-
-        $this->assertTrue($user->requires2FA());
-    }
-
-    #[Test]
-    public function user_can_get_authentication_methods()
-    {
-        $user = User::factory()->create();
-
-        $methods = $user->getAuthenticationMethods();
-
-        $this->assertArrayHasKey('password', $methods);
-        $this->assertArrayHasKey('two_factor', $methods);
-        $this->assertArrayHasKey('passkey', $methods);
-        $this->assertTrue($methods['password']);
-        $this->assertFalse($methods['two_factor']);
-        $this->assertFalse($methods['passkey']);
     }
 
     #[Test]

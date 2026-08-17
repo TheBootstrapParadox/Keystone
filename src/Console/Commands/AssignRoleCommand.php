@@ -32,8 +32,9 @@ class AssignRoleCommand extends Command
         $userIdentifier = $this->argument('user');
         $user = $this->findUser($userIdentifier);
 
-        if (!$user) {
+        if (! $user) {
             $this->error("User '{$userIdentifier}' not found.");
+
             return self::FAILURE;
         }
 
@@ -42,6 +43,7 @@ class AssignRoleCommand extends Command
 
         if (empty($roles)) {
             $this->error('No roles specified. Provide role names as arguments or use --role option.');
+
             return self::FAILURE;
         }
 
@@ -85,6 +87,7 @@ class AssignRoleCommand extends Command
         } catch (\Exception $e) {
             $action = $this->option('remove') ? 'remove' : 'assign';
             $this->error("Failed to {$action} roles: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }

@@ -1,10 +1,10 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
-use BSPDX\Keystone\Support\PasskeyConfig;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -14,38 +14,30 @@ return new class extends Migration
     public function up(): void
     {
         // Only run if multi-tenancy is enabled
-        if (!config('keystone.features.multi_tenant', false)) {
+        if (! config('keystone.features.multi_tenant', false)) {
             return;
         }
 
-        // Detect if user model uses UUIDs (same logic as permission migration line 24)
-        $authenticatableClass = PasskeyConfig::getAuthenticatableModel();
+        // Resolve the user model class for backfilling tenant_id (same logic as permission migration line 24)
+        $authenticatableClass = config('keystone.user.model')
+            ?? config('auth.providers.users.model', User::class);
         $authenticatable = new $authenticatableClass;
-        $useUuids = method_exists($authenticatable, 'uniqueIds');
         $teamForeignKey = 'tenant_id';
         $modelHasRolesTable = 'model_has_roles';
         $modelHasPermissionsTable = 'model_has_permissions';
 
         // Add tenant_id to model_has_roles if not exists
-        Schema::table($modelHasRolesTable, function (Blueprint $table) use ($teamForeignKey, $useUuids) {
-            if (!Schema::hasColumn('model_has_roles', $teamForeignKey)) {
-                if ($useUuids) {
-                    $table->uuid($teamForeignKey)->nullable()->after('model_id');
-                } else {
-                    $table->unsignedBigInteger($teamForeignKey)->nullable()->after('model_id');
-                }
+        Schema::table($modelHasRolesTable, function (Blueprint $table) use ($teamForeignKey) {
+            if (! Schema::hasColumn('model_has_roles', $teamForeignKey)) {
+                $table->uuid($teamForeignKey)->nullable()->after('model_id');
                 $table->index($teamForeignKey, 'model_has_roles_tenant_foreign_key_index');
             }
         });
 
         // Add tenant_id to model_has_permissions if not exists
-        Schema::table($modelHasPermissionsTable, function (Blueprint $table) use ($teamForeignKey, $useUuids) {
-            if (!Schema::hasColumn('model_has_permissions', $teamForeignKey)) {
-                if ($useUuids) {
-                    $table->uuid($teamForeignKey)->nullable()->after('model_id');
-                } else {
-                    $table->unsignedBigInteger($teamForeignKey)->nullable()->after('model_id');
-                }
+        Schema::table($modelHasPermissionsTable, function (Blueprint $table) use ($teamForeignKey) {
+            if (! Schema::hasColumn('model_has_permissions', $teamForeignKey)) {
+                $table->uuid($teamForeignKey)->nullable()->after('model_id');
                 $table->index($teamForeignKey, 'model_has_permissions_tenant_foreign_key_index');
             }
         });
@@ -113,7 +105,7 @@ return new class extends Migration
     public function down(): void
     {
         // Only run if multi-tenancy is enabled
-        if (!config('keystone.features.multi_tenant', false)) {
+        if (! config('keystone.features.multi_tenant', false)) {
             return;
         }
 

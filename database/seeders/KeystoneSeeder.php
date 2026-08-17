@@ -2,9 +2,11 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use BSPDX\Keystone\Models\KeystoneRole;
+use App\Models\User;
 use BSPDX\Keystone\Models\KeystonePermission;
+use BSPDX\Keystone\Models\KeystoneRole;
+use BSPDX\Keystone\Services\PermissionRegistrar;
+use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 class KeystoneSeeder extends Seeder
@@ -15,7 +17,7 @@ class KeystoneSeeder extends Seeder
     public function run(): void
     {
         // Reset cached roles and permissions
-        app()[\BSPDX\Keystone\Services\PermissionRegistrar::class]->forgetCachedPermissions();
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
 
         // Create permissions with title and description
         $permissions = [
@@ -132,7 +134,7 @@ class KeystoneSeeder extends Seeder
     {
         // Resolve User class from config
         $userClass = config('keystone.user.model')
-            ?? config('auth.providers.users.model', \App\Models\User::class);
+            ?? config('auth.providers.users.model', User::class);
 
         // Super Admin user
         $superAdminUser = $userClass::firstOrCreate(

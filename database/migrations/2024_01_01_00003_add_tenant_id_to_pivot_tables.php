@@ -1,10 +1,10 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
-use BSPDX\Keystone\Support\PasskeyConfig;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -17,24 +17,19 @@ return new class extends Migration
     public function up(): void
     {
         // Only run if multi-tenancy is enabled
-        if (!config('keystone.features.multi_tenant', false)) {
+        if (! config('keystone.features.multi_tenant', false)) {
             return;
         }
 
-        // Detect if user model uses UUIDs
-        $authenticatableClass = PasskeyConfig::getAuthenticatableModel();
-        $authenticatable = new $authenticatableClass;
-        $useUuids = method_exists($authenticatable, 'uniqueIds');
+        // Resolve the user model class for backfilling tenant_id
+        $authenticatableClass = config('keystone.user.model')
+            ?? config('auth.providers.users.model', User::class);
         $userTable = (new $authenticatableClass)->getTable();
 
         // Add tenant_id to model_has_roles if not exists
-        if (!Schema::hasColumn('model_has_roles', 'tenant_id')) {
-            Schema::table('model_has_roles', function (Blueprint $table) use ($useUuids) {
-                if ($useUuids) {
-                    $table->uuid('tenant_id')->nullable()->after('model_id');
-                } else {
-                    $table->unsignedBigInteger('tenant_id')->nullable()->after('model_id');
-                }
+        if (! Schema::hasColumn('model_has_roles', 'tenant_id')) {
+            Schema::table('model_has_roles', function (Blueprint $table) {
+                $table->uuid('tenant_id')->nullable()->after('model_id');
                 $table->index('tenant_id', 'model_has_roles_tenant_id_index');
             });
 
@@ -43,13 +38,9 @@ return new class extends Migration
         }
 
         // Add tenant_id to model_has_permissions if not exists
-        if (!Schema::hasColumn('model_has_permissions', 'tenant_id')) {
-            Schema::table('model_has_permissions', function (Blueprint $table) use ($useUuids) {
-                if ($useUuids) {
-                    $table->uuid('tenant_id')->nullable()->after('model_id');
-                } else {
-                    $table->unsignedBigInteger('tenant_id')->nullable()->after('model_id');
-                }
+        if (! Schema::hasColumn('model_has_permissions', 'tenant_id')) {
+            Schema::table('model_has_permissions', function (Blueprint $table) {
+                $table->uuid('tenant_id')->nullable()->after('model_id');
                 $table->index('tenant_id', 'model_has_permissions_tenant_id_index');
             });
 
@@ -60,10 +51,6 @@ return new class extends Migration
 
     /**
      * Backfill tenant_id in pivot tables from user records.
-     *
-     * @param string $pivotTable
-     * @param string $userTable
-     * @return void
      */
     protected function backfillTenantId(string $pivotTable, string $userTable): void
     {
@@ -101,7 +88,7 @@ return new class extends Migration
     public function down(): void
     {
         // Only run if multi-tenancy is enabled
-        if (!config('keystone.features.multi_tenant', false)) {
+        if (! config('keystone.features.multi_tenant', false)) {
             return;
         }
 

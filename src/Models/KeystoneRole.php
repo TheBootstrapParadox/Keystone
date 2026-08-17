@@ -2,10 +2,12 @@
 
 namespace BSPDX\Keystone\Models;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
+use Illuminate\Support\Collection;
 
 class KeystoneRole extends Model
 {
@@ -36,7 +38,7 @@ class KeystoneRole extends Model
 
         // Add global scope for tenant isolation when multi-tenancy is enabled
         static::addGlobalScope('tenant', function (Builder $query) {
-            if (!config('keystone.features.multi_tenant', false)) {
+            if (! config('keystone.features.multi_tenant', false)) {
                 return;
             }
 
@@ -44,7 +46,7 @@ class KeystoneRole extends Model
                 $tableName = $query->getModel()->getTable();
                 $query->where(function ($q) use ($tableName) {
                     $q->where("{$tableName}.tenant_id", auth()->user()->tenant_id)
-                      ->orWhereNull("{$tableName}.tenant_id"); // Include global roles
+                        ->orWhereNull("{$tableName}.tenant_id"); // Include global roles
                 });
             }
         });
@@ -52,14 +54,14 @@ class KeystoneRole extends Model
         // Auto-set tenant_id and guard_name when creating roles
         static::creating(function ($role) {
             // Set guard_name if not provided
-            if (!isset($role->guard_name)) {
+            if (! isset($role->guard_name)) {
                 $role->guard_name = 'web';
             }
 
             // Set tenant_id for multi-tenant mode
             if (config('keystone.features.multi_tenant', false) &&
                 auth()->check() &&
-                !isset($role->tenant_id)) {
+                ! isset($role->tenant_id)) {
                 $role->tenant_id = auth()->user()->tenant_id;
             }
         });
@@ -88,7 +90,7 @@ class KeystoneRole extends Model
     public function users(): MorphToMany
     {
         return $this->morphedByMany(
-            config('keystone.user.model', '\BSPDX\Keystone\Models\KeystoneUser'),
+            config('keystone.user.model') ?? config('auth.providers.users.model', User::class),
             'model',
             'model_has_roles',
             'role_id',
@@ -109,6 +111,7 @@ class KeystoneRole extends Model
             if ($permission instanceof KeystonePermission) {
                 return $permission;
             }
+
             return KeystonePermission::where('name', $permission)->firstOrFail();
         });
 
@@ -127,6 +130,7 @@ class KeystoneRole extends Model
             if ($permission instanceof KeystonePermission) {
                 return $permission;
             }
+
             return KeystonePermission::where('name', $permission)->firstOrFail();
         });
 
@@ -168,7 +172,7 @@ class KeystoneRole extends Model
     /**
      * Get all permission names for this role.
      */
-    public function getPermissionNames(): \Illuminate\Support\Collection
+    public function getPermissionNames(): Collection
     {
         return $this->permissions->pluck('name');
     }

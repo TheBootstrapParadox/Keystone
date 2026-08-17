@@ -1,9 +1,7 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use BSPDX\Keystone\Http\Controllers\RolePermissionController;
-use BSPDX\Keystone\Http\Controllers\TwoFactorAuthController;
-use BSPDX\Keystone\Http\Controllers\PasskeyAuthController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -13,12 +11,14 @@ use BSPDX\Keystone\Http\Controllers\PasskeyAuthController;
 | These are example API routes for the BSPDX Keystone package.
 | Copy these routes to your routes/api.php file and customize as needed.
 |
-| These routes are protected with Sanctum authentication.
+| Keystone does not require or assume Sanctum — it's shown below only as
+| the most common choice. Protect this group with whatever auth guard
+| your application actually uses.
 |
 */
 
 // Role & Permission Management API
-Route::middleware(['auth:sanctum'])->prefix('api')->group(function () {
+Route::middleware(['auth'])->prefix('api')->group(function () {
     // View roles and permissions
     Route::get('/roles', [RolePermissionController::class, 'roles'])
         ->middleware('permission:view-roles')
@@ -64,37 +64,4 @@ Route::middleware(['auth:sanctum'])->prefix('api')->group(function () {
     Route::post('/roles/{role}/permissions', [RolePermissionController::class, 'assignPermissionsToRole'])
         ->middleware('permission:assign-permissions')
         ->name('api.roles.permissions.assign');
-});
-
-// Two-Factor Authentication API
-Route::middleware(['auth:sanctum'])->prefix('api/user')->group(function () {
-    Route::post('/two-factor-authentication', [TwoFactorAuthController::class, 'store'])
-        ->name('api.two-factor.store');
-
-    Route::post('/confirmed-two-factor-authentication', [TwoFactorAuthController::class, 'confirm'])
-        ->name('api.two-factor.confirm');
-
-    Route::delete('/two-factor-authentication', [TwoFactorAuthController::class, 'destroy'])
-        ->name('api.two-factor.destroy');
-
-    Route::get('/two-factor-recovery-codes', [TwoFactorAuthController::class, 'recoveryCodes'])
-        ->name('api.two-factor.recovery-codes');
-
-    Route::post('/two-factor-recovery-codes', [TwoFactorAuthController::class, 'regenerateRecoveryCodes'])
-        ->name('api.two-factor.recovery-codes.regenerate');
-});
-
-// Passkey API
-Route::middleware(['auth:sanctum'])->prefix('api/user')->group(function () {
-    Route::get('/passkeys', [PasskeyAuthController::class, 'index'])
-        ->name('api.passkeys.index');
-
-    Route::post('/passkeys/options', [PasskeyAuthController::class, 'registerOptions'])
-        ->name('api.passkeys.register.options');
-
-    Route::post('/passkeys', [PasskeyAuthController::class, 'store'])
-        ->name('api.passkeys.store');
-
-    Route::delete('/passkeys/{passkeyId}', [PasskeyAuthController::class, 'destroy'])
-        ->name('api.passkeys.destroy');
 });

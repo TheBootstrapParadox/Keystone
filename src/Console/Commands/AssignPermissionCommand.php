@@ -36,13 +36,15 @@ class AssignPermissionCommand extends Command
         $toUser = $this->option('to-user');
 
         // Validate target
-        if (!$toRole && !$toUser) {
+        if (! $toRole && ! $toUser) {
             $this->error('You must specify either --to-role or --to-user.');
+
             return self::FAILURE;
         }
 
         if ($toRole && $toUser) {
             $this->error('You cannot specify both --to-role and --to-user. Choose one.');
+
             return self::FAILURE;
         }
 
@@ -51,6 +53,7 @@ class AssignPermissionCommand extends Command
 
         if (empty($permissions)) {
             $this->error('No permissions specified. Provide permission names as arguments or use --permission option.');
+
             return self::FAILURE;
         }
 
@@ -76,8 +79,9 @@ class AssignPermissionCommand extends Command
             ->where('guard_name', $guard)
             ->first();
 
-        if (!$role) {
+        if (! $role) {
             $this->error("Role '{$roleName}' not found for guard '{$guard}'.");
+
             return self::FAILURE;
         }
 
@@ -117,6 +121,7 @@ class AssignPermissionCommand extends Command
             return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to modify permissions: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }
@@ -128,8 +133,9 @@ class AssignPermissionCommand extends Command
     {
         $user = $this->findUser($userIdentifier);
 
-        if (!$user) {
+        if (! $user) {
             $this->error("User '{$userIdentifier}' not found.");
+
             return self::FAILURE;
         }
 
@@ -162,13 +168,14 @@ class AssignPermissionCommand extends Command
                     ['Previous Direct Permissions', implode(', ', $previousPermissions) ?: '(none)'],
                     [$this->option('remove') ? 'Removed Permissions' : 'Specified Permissions', implode(', ', $permissions)],
                     ['Current Direct Permissions', implode(', ', $currentPermissions) ?: '(none)'],
-                    ['All Permissions (incl. via roles)', count($allPermissions) . ' total'],
+                    ['All Permissions (incl. via roles)', count($allPermissions).' total'],
                 ]
             );
 
             return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to modify permissions: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }

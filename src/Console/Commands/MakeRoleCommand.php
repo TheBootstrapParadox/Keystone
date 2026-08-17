@@ -39,7 +39,7 @@ class MakeRoleCommand extends Command
             // Gather permissions from both options
             $permissions = $this->gatherPermissions();
 
-            if (!empty($permissions)) {
+            if (! empty($permissions)) {
                 $this->roleService->syncPermissions($role, $permissions);
                 $role->refresh();
             }
@@ -54,13 +54,14 @@ class MakeRoleCommand extends Command
                 [[
                     $role->name,
                     $role->guard_name,
-                    $role->permissions->pluck('name')->implode(', ') ?: '(none)'
+                    $role->permissions->pluck('name')->implode(', ') ?: '(none)',
                 ]]
             );
 
             return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to create role: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }

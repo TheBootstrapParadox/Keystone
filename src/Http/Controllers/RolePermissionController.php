@@ -2,14 +2,14 @@
 
 namespace BSPDX\Keystone\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Models\KeystonePermission;
-use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
-use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
+use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
+use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
+use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class RolePermissionController
 {
@@ -21,6 +21,7 @@ class RolePermissionController
         private PermissionServiceInterface $permissionService,
         private AuthorizationServiceInterface $authorizationService
     ) {}
+
     /**
      * Get all roles.
      */
@@ -178,11 +179,11 @@ class RolePermissionController
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'roles' => $user->roles->map(fn($role) => [
+                'roles' => $user->roles->map(fn ($role) => [
                     'id' => $role->id,
                     'name' => $role->name,
                 ]),
-                'permissions' => $this->permissionService->getAllUserPermissions($user)->map(fn($permission) => [
+                'permissions' => $this->permissionService->getAllUserPermissions($user)->map(fn ($permission) => [
                     'id' => $permission->id,
                     'name' => $permission->name,
                 ]),

@@ -22,7 +22,7 @@ abstract class TestCase extends BaseTestCase
     protected function migrateFreshUsing()
     {
         return array_merge($this->baseMigrateFreshUsing(), [
-            '--path' => realpath(__DIR__ . '/database/migrations'),
+            '--path' => realpath(__DIR__.'/database/migrations'),
             '--realpath' => true,
         ]);
     }

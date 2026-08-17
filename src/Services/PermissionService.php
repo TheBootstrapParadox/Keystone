@@ -3,16 +3,15 @@
 namespace BSPDX\Keystone\Services;
 
 use BSPDX\Keystone\Models\KeystonePermission;
+use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
-use Illuminate\Support\Collection;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Collection;
 
 class PermissionService implements PermissionServiceInterface
 {
     /**
      * Get all permissions with their roles.
-     *
-     * @return Collection
      */
     public function getAllWithRoles(): Collection
     {
@@ -21,10 +20,6 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Create a new permission.
-     *
-     * @param string $name
-     * @param string $guardName
-     * @return KeystonePermission
      */
     public function create(string $name, string $guardName = 'web'): KeystonePermission
     {
@@ -36,9 +31,6 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Delete a permission.
-     *
-     * @param KeystonePermission $permission
-     * @return void
      */
     public function delete(KeystonePermission $permission): void
     {
@@ -47,10 +39,6 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Sync permissions directly to a user.
-     *
-     * @param Authenticatable $user
-     * @param array $permissions
-     * @return void
      */
     public function syncToUser(Authenticatable $user, array $permissions): void
     {
@@ -59,9 +47,6 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Get direct permissions assigned to a user.
-     *
-     * @param Authenticatable $user
-     * @return Collection
      */
     public function getUserPermissions(Authenticatable $user): Collection
     {
@@ -70,9 +55,6 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Get all permissions for a user (including via roles).
-     *
-     * @param Authenticatable $user
-     * @return Collection
      */
     public function getAllUserPermissions(Authenticatable $user): Collection
     {
@@ -81,11 +63,6 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Find a permission by name.
-     *
-     * @param string $name
-     * @param string $guardName
-     * @param string|null $tenantId
-     * @return KeystonePermission|null
      */
     public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystonePermission
     {
@@ -100,13 +77,10 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Get all permissions for a specific tenant.
-     *
-     * @param string|null $tenantId
-     * @return Collection
      */
     public function getAllForTenant(?string $tenantId = null): Collection
     {
-        if (!config('keystone.features.multi_tenant', false)) {
+        if (! config('keystone.features.multi_tenant', false)) {
             return $this->getAllWithRoles();
         }
 
@@ -121,10 +95,6 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Assign permission(s) directly to a user.
-     *
-     * @param Authenticatable $user
-     * @param string|array $permissions
-     * @return void
      */
     public function assignToUser(Authenticatable $user, string|array $permissions): void
     {
@@ -133,10 +103,6 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Remove permission(s) from a user.
-     *
-     * @param Authenticatable $user
-     * @param string|array $permissions
-     * @return void
      */
     public function removeFromUser(Authenticatable $user, string|array $permissions): void
     {
@@ -145,24 +111,16 @@ class PermissionService implements PermissionServiceInterface
 
     /**
      * Assign permission(s) to a role.
-     *
-     * @param \BSPDX\Keystone\Models\KeystoneRole $role
-     * @param string|array $permissions
-     * @return void
      */
-    public function assignToRole(\BSPDX\Keystone\Models\KeystoneRole $role, string|array $permissions): void
+    public function assignToRole(KeystoneRole $role, string|array $permissions): void
     {
         $role->givePermissionTo($permissions);
     }
 
     /**
      * Remove permission(s) from a role.
-     *
-     * @param \BSPDX\Keystone\Models\KeystoneRole $role
-     * @param string|array $permissions
-     * @return void
      */
-    public function removeFromRole(\BSPDX\Keystone\Models\KeystoneRole $role, string|array $permissions): void
+    public function removeFromRole(KeystoneRole $role, string|array $permissions): void
     {
         $role->revokePermissionTo($permissions);
     }

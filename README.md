@@ -3,43 +3,31 @@
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/bspdx/keystone.svg?style=flat-square)](https://packagist.org/packages/bspdx/keystone)
 [![Total Downloads](https://img.shields.io/packagist/dt/bspdx/keystone.svg?style=flat-square)](https://packagist.org/packages/bspdx/keystone)
 [![License](https://img.shields.io/packagist/l/bspdx/keystone.svg?style=flat-square)](https://packagist.org/packages/bspdx/keystone)
-A comprehensive, production-ready authentication package for Laravel with an **API-first architecture**. Keystone combines the power of Laravel Fortify, Sanctum, and Spatie Laravel Passkeys to provide a full-featured auth system with:
 
+A multi-tenant role-based access control (RBAC) package for Laravel. Keystone adds roles,
+permissions, and tenant-scoped authorization to whatever User model your application already
+has — it does not provide authentication. Bring your own login, registration, 2FA, and
+passkeys (Fortify, Breeze, or anything else); Keystone plugs in via a single trait.
 
--   🔐 **Standard Authentication** - Powered by Laravel Fortify
 -   👥 **Role-Based Access Control (RBAC)** - Clean service layer API
--   📱 **TOTP Two-Factor Authentication** - Google Authenticator, Authy, etc.
--   🔑 **Passkey Authentication** - Modern WebAuthn/FIDO2 login
--   🚦 **Brute-Force Protection** - Configurable rate limiting on login, 2FA, and passkey attempts
--   🎨 **Optional Blade UI Components** - Pre-built views for Laravel projects
--   🌐 **API-First Design** - Works with React, Vue, mobile apps, or any frontend
--   🏢 **Multi-Tenancy Ready** - Optional tenant scoping
-
-## Frontend Flexibility
-
-**Keystone works with any frontend framework:**
-- ✅ **React, Vue, Angular, Svelte** - Use the JSON API endpoints
-- ✅ **Mobile Apps** - iOS, Android, React Native, Flutter
-- ✅ **Laravel Blade** - Optional pre-built UI components included
-- ✅ **Inertia.js** - Perfect for hybrid approaches
-
-All controllers return JSON when requested, making Keystone truly framework-agnostic at the API level.
+-   🏢 **Multi-Tenancy Ready** - Optional, global-scope tenant isolation
+-   🚪 **Laravel Gate Integration** - Permissions registered via `Gate::before()`
+-   🌐 **API-First Design** - JSON role/permission management API included
+-   🔌 **Framework-Agnostic Auth** - Works alongside any authentication stack
 
 ## Table of Contents
 
--   [Frontend Flexibility](#frontend-flexibility)
 -   [Requirements](#requirements)
 -   [Installation](#installation)
 -   [Configuration](#configuration)
 -   [Usage](#usage)
-    -   [User Model Setup](#user-model-setup)
-    -   [Service Layer](#service-layer-new-in-v030)
-    -   [Blade Components (Optional)](#blade-components-optional)
+    -   [Adding RBAC to Your User Model](#adding-rbac-to-your-user-model)
+    -   [Service Layer](#service-layer)
     -   [Routes](#routes)
     -   [Middleware](#middleware)
+    -   [Checking Permissions in Code](#checking-permissions-in-code)
     -   [API Usage](#api-usage)
 -   [Architecture](#architecture)
--   [HTTPS Setup](#https-setup)
 -   [Multi-Tenancy](#multi-tenancy)
 -   [Testing](#testing)
 -   [Credits](#credits)
@@ -59,19 +47,15 @@ All controllers return JSON when requested, making Keystone truly framework-agno
 composer require bspdx/keystone
 ```
 
-### Step 2: Publish Configuration & Assets
+### Step 2: Publish Configuration & Migrations
 
 ```bash
-# Publish the essentials: configuration and migrations
 php artisan vendor:publish --tag=keystone-config --tag=keystone-migrations
 
-# Publish Blade views (optional - only if you want to customize)
-php artisan vendor:publish --tag=keystone-views
-
-# Publish example routes
+# Optional: example RBAC API routes
 php artisan vendor:publish --tag=keystone-routes
 
-# Publish database seeders
+# Optional: demo roles/permissions/users seeder
 php artisan vendor:publish --tag=keystone-seeders
 ```
 
@@ -81,12 +65,8 @@ php artisan vendor:publish --tag=keystone-seeders
 php artisan migrate
 ```
 
-This will create tables for:
-
--   Two-factor authentication columns in `users` table
--   Roles and permissions (custom RBAC)
--   Passkeys
--   Personal access tokens (Sanctum)
+This creates tables for roles and permissions (custom RBAC), and — if `KEYSTONE_MULTI_TENANT`
+is enabled — a `tenant_id` column on your users table and on the role/permission pivot tables.
 
 ### Step 4: Seed Demo Data (Optional)
 
@@ -94,93 +74,41 @@ This will create tables for:
 php artisan db:seed --class=KeystoneSeeder
 ```
 
-This creates:
+This creates 4 default roles (`super-admin`, `admin`, `editor`, `user`) with common
+permissions, and 4 demo users assigned to them.
 
--   4 default roles: `super-admin`, `admin`, `editor`, `user`
--   Common permissions for each role
--   4 demo users (all with password: `password`)
-    -   `superadmin@example.com` - Super Admin
-    -   `admin@example.com` - Admin
-    -   `editor@example.com` - Editor
-    -   `user@example.com` - Regular User
+### Step 5: Set Up Your Own Authentication
 
-### Step 5: Configure Fortify
-
-In your `config/fortify.php`, ensure these features are enabled:
-
-```php
-'features' => [
-    Features::registration(),
-    Features::resetPasswords(),
-    Features::emailVerification(),
-    Features::updateProfileInformation(),
-    Features::updatePasswords(),
-    Features::twoFactorAuthentication([
-        'confirm' => true,
-        'confirmPassword' => true,
-    ]),
-],
-```
+Keystone does not configure or require any authentication package. Install and configure
+`laravel/fortify` (or Breeze, or your own solution) exactly as you would in a Keystone-free
+Laravel app. Keystone only needs your User model to exist and to use the `HasKeystone` trait
+(see below) — it has no opinion on how users log in.
 
 ## Configuration
 
-The package configuration is located at `config/keystone.php`. Key settings:
+The package configuration is located at `config/keystone.php`.
 
-### Enable/Disable Features
+### Feature Flags
 
 ```php
 'features' => [
-    // Two-factor authentication (TOTP via Fortify)
-    'two_factor' => true,
-
-    // Passkey authentication (WebAuthn/FIDO2)
-    'passkeys' => true,
-
-    // Passkey as a second factor (reserved — not yet implemented)
-    'passkey_2fa' => false,
-
-    // Account deletion endpoint (reserved — not yet implemented)
-    'account_deletion' => false,
-
-    // Allow users to configure passwordless login options
-    'passwordless_login' => true,
-
-    // Show roles and permissions on the profile page
-    'show_permissions' => true,
-
     // Enable multi-tenant mode (adds tenant_id column to users, roles, and permissions tables)
     'multi_tenant' => env('KEYSTONE_MULTI_TENANT', false),
 ],
 ```
 
-> **Note:** Standard auth features — registration, email verification, password reset, profile/password updates, and API tokens — are provided by Laravel Fortify and Sanctum, and are configured in `config/fortify.php` (see [Step 5](#step-5-configure-fortify)). The `keystone.features` array only toggles Keystone-specific functionality.
-
-When `multi_tenant` is enabled, Keystone will add a nullable `tenant_id` column to users, roles, permissions, and pivot tables. Keystone uses **global scopes** for automatic tenant isolation (not Spatie's teams feature).
+When `multi_tenant` is enabled, Keystone adds a nullable `tenant_id` column to users, roles,
+permissions, and pivot tables, and uses **global scopes** for automatic tenant isolation (not
+Spatie's teams feature).
 
 **Key Features:**
 - **Automatic Filtering** - Authenticated users only see roles/permissions for their tenant
 - **Global Roles/Permissions** - Set `tenant_id = NULL` for cross-tenant access
-- **UUID Support** - Works with both UUID and bigint tenant IDs
+- **UUID Support** - `tenant_id` is always a UUID column
 - **Super-Admin Bypass** - Use `::withoutTenant()` for cross-tenant operations
 
-**Example:**
-
-```php
-use BSPDX\Keystone\Models\KeystoneRole;
-
-// Create global role (accessible to all tenants)
-$superAdmin = KeystoneRole::withoutTenant()->create([
-    'name' => 'super_administrator',
-    'tenant_id' => null,
-]);
-
-// Create tenant-specific role (auto-scoped)
-Auth::login($userInTenantA);
-$manager = KeystoneRole::create(['name' => 'manager']);
-// tenant_id automatically populated from auth()->user()->tenant_id
-```
-
-See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architecture, usage examples, and migration guides.
+See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architecture, usage
+examples, and migration guides.
 
 ### RBAC Settings
 
@@ -189,103 +117,18 @@ See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architectu
     // Cache expiration time for roles and permissions (in seconds)
     'cache_expiration' => 60 * 60 * 24, // 24 hours
 
-    // Default role assigned to new users (null = no default role)
-    'default_role' => 'user',
-
     // Super admin role that bypasses all permission checks
     'super_admin_role' => 'super-admin',
 ],
 ```
 
-### Passkey Settings
-
-```php
-'passkey' => [
-    // Relying Party name (your application name)
-    'rp_name' => env('APP_NAME', 'Laravel'),
-
-    // Relying Party ID — derived from APP_URL host, falls back to 'localhost'
-    'rp_id' => env('APP_URL') ? parse_url(env('APP_URL'), PHP_URL_HOST) : 'localhost',
-
-    // Timeout for passkey operations (in milliseconds)
-    'timeout' => 60000,
-
-    // User verification: 'required', 'preferred', or 'discouraged'
-    'user_verification' => 'preferred',
-
-    // Attestation conveyance: 'none', 'indirect', or 'direct'
-    'attestation' => 'none',
-
-    'allow_multiple' => true,
-    'required_for_roles' => [
-        // 'admin',
-    ],
-],
-```
-
-### Two-Factor Settings
-
-```php
-'two_factor' => [
-    'qr_code_size' => 200,
-    'recovery_codes_count' => 8,
-
-    // Window of time to accept TOTP codes (in periods, 1 period = 30 seconds)
-    'window' => 1,
-
-    'required_for_roles' => [
-        // 'admin',
-    ],
-],
-```
-
-### Rate Limiting
-
-Keystone throttles authentication attempts to protect against brute-force attacks. Attempts are keyed by action, identifier (authenticated user or submitted email), and client IP.
-
-```php
-'rate_limiting' => [
-    // Maximum login attempts before lockout
-    'max_login_attempts' => 5,
-
-    // Lockout duration in minutes
-    'lockout_duration' => 1,
-
-    // Maximum 2FA attempts
-    'max_2fa_attempts' => 3,
-
-    // Maximum passkey attempts
-    'max_passkey_attempts' => 3,
-],
-```
-
-When a limit is exceeded, JSON requests receive a `429 Too Many Attempts` response with the remaining lockout time.
-
-### Profile Page Settings
-
-```php
-'profile' => [
-    // URI path where the profile page is accessible
-    'path' => '/profile',
-
-    // Middleware applied to profile routes
-    'middleware' => ['web', 'auth'],
-
-    // Require password confirmation before sensitive operations
-    'require_password_confirm' => true,
-
-    // Layout view to extend (set to null for component-only mode)
-    'layout' => 'layouts.app',
-],
-```
-
 ## Usage
 
-### User Model Setup
+### Adding RBAC to Your User Model
 
-**New project?** Use the built-in `KeystoneUser` model and skip this setup entirely. See [User Model Configuration](docs/USER_MODEL.md) for a full comparison and setup instructions.
-
-Add the `HasKeystone` trait to your existing `User` model:
+Add the `HasKeystone` trait to your existing `User` model — this is Keystone's only
+integration point. It adds role/permission relationships and tenant-aware scoping; it does not
+touch authentication.
 
 ```php
 <?php
@@ -300,15 +143,13 @@ class User extends Authenticatable
 {
     use Notifiable, HasKeystone;
 
+    // Add whatever your own auth stack requires, e.g.:
+    // use Laravel\Fortify\TwoFactorAuthenticatable;
+    // use Laravel\Sanctum\HasApiTokens;
+
     // ... rest of your model
 }
 ```
-
-This trait combines:
-
--   `HasApiTokens` (Sanctum)
--   `TwoFactorAuthenticatable` (Fortify)
--   `HasPasskeys` (Spatie Passkeys)
 
 You can also query users by assigned role directly from the model:
 
@@ -319,9 +160,9 @@ $admins = User::role('admin')->get();
 $staff = User::role(['admin', 'manager'])->get();
 ```
 
-### Service Layer (NEW in v0.3.0)
+### Service Layer
 
-Keystone v0.3.0 introduces a clean service layer architecture to interact with roles, permissions, and passkeys. All external dependencies are now abstracted behind Keystone services.
+All role and permission operations go through dedicated services, abstracted behind interfaces.
 
 #### Using Services in Controllers
 
@@ -333,7 +174,6 @@ namespace App\Http\Controllers;
 use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
 use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
-use BSPDX\Keystone\Services\Contracts\PasskeyServiceInterface;
 
 class AdminController extends Controller
 {
@@ -363,53 +203,6 @@ class AdminController extends Controller
 - Clean dependency injection
 - Easy to mock for testing
 - No direct external package dependencies in your code
-- Future-proof architecture
-
-### Blade Components (Optional)
-
-Keystone provides **optional** pre-built Blade components for Laravel projects. If you're using React, Vue, or another frontend framework, you can skip this section and use the JSON API endpoints instead.
-
-**For Laravel Blade users:**
-
-#### Login Form
-
-```blade
-<x-keystone::login-form
-    :show-passkey-option="true"
-    :show-remember-me="true"
-    :show-register-link="true"
-    :show-forgot-password="true"
-/>
-```
-
-#### Register Form
-
-```blade
-<x-keystone::register-form
-    :show-login-link="true"
-    :required-fields="['name', 'email', 'password', 'password_confirmation']"
-/>
-```
-
-#### Two-Factor Challenge
-
-```blade
-<x-keystone::two-factor-challenge
-    :show-recovery-code-option="true"
-/>
-```
-
-#### Passkey Registration
-
-```blade
-<x-keystone::passkey-register />
-```
-
-#### Passkey Login
-
-```blade
-<x-keystone::passkey-login />
-```
 
 ### Routes
 
@@ -431,16 +224,13 @@ require __DIR__.'/keystone-api.php';
 
 ### Middleware
 
-Keystone registers six middleware aliases:
+Keystone registers three middleware aliases:
 
 | Alias | Purpose |
 | --- | --- |
 | `role:<role>` | Require one of the listed roles (OR logic) |
 | `permission:<perm>` | Require one of the listed permissions (OR logic) |
-| `2fa` | Ensure users with required roles have 2FA enabled |
 | `keystone.feature:<name>` | Return `404` if the named feature flag is disabled |
-| `password-confirm` | Require recent password confirmation for sensitive routes |
-| `passkey-2fa` | Require passkey second-factor verification |
 
 #### Role Middleware
 
@@ -468,41 +258,13 @@ Route::middleware(['auth', 'permission:edit-posts,publish-posts'])->group(functi
 });
 ```
 
-#### 2FA Enforcement Middleware
-
-```php
-Route::middleware(['auth', '2fa'])->group(function () {
-    // Ensures users with required roles have 2FA enabled
-});
-```
-
 #### Feature Flag Middleware
 
 Gate routes behind a `keystone.features.*` flag. Requests to a disabled feature return `404`.
 
 ```php
-Route::middleware(['auth', 'keystone.feature:account_deletion'])->group(function () {
-    // Only reachable when 'account_deletion' is enabled in config
-});
-```
-
-#### Password Confirmation Middleware
-
-Require a recent password confirmation before sensitive operations. Web requests are redirected to the `password.confirm` route; JSON requests receive a `423` response. The confirmation window is set by `keystone.session.password_timeout`.
-
-```php
-Route::middleware(['auth', 'password-confirm'])->group(function () {
-    // Requires the user to have confirmed their password recently
-});
-```
-
-#### Passkey 2FA Middleware
-
-Require passkey second-factor verification for users with a registered passkey. JSON requests receive a `423` response; web requests are redirected to the passkey challenge.
-
-```php
-Route::middleware(['auth', 'passkey-2fa'])->group(function () {
-    // Requires passkey verification when passkey_2fa is enabled
+Route::middleware(['auth', 'keystone.feature:multi_tenant'])->group(function () {
+    // Only reachable when 'multi_tenant' is enabled in config
 });
 ```
 
@@ -554,43 +316,8 @@ class PostController extends Controller
 
 ### API Usage
 
-Keystone is designed with an **API-first architecture**, making it perfect for:
-- Single Page Applications (React, Vue, Angular, Svelte)
-- Mobile applications (iOS, Android, React Native, Flutter)
-- Headless/decoupled architectures
-- Microservices
-
-#### Authentication
-
-Use Sanctum for API authentication. All Keystone controllers automatically return JSON when the request has `Accept: application/json` header or uses `wantsJson()`:
-
-```php
-// Login endpoint (you need to create this)
-Route::post('/login', function (Request $request) {
-    $credentials = $request->validate([
-        'email' => 'required|email',
-        'password' => 'required',
-    ]);
-
-    if (!Auth::attempt($credentials)) {
-        return response()->json(['message' => 'Invalid credentials'], 401);
-    }
-
-    $user = $request->user();
-    $token = $user->createToken('api-token')->plainTextToken;
-
-    return response()->json([
-        'token' => $token,
-        'user' => $user,
-    ]);
-});
-```
-
-#### API Endpoints
-
-All API routes are protected with `auth:sanctum` middleware. Example requests:
-
-**Get All Roles:**
+Keystone's role/permission management API is JSON-first, making it easy to drive from any
+frontend. Protect the API routes with whatever auth guard your application uses:
 
 ```bash
 curl -X GET http://localhost/api/roles \
@@ -607,23 +334,12 @@ curl -X POST http://localhost/api/users/1/roles \
   -d '{"roles": ["admin"]}'
 ```
 
-**Enable 2FA:**
-
-```bash
-curl -X POST http://localhost/api/user/two-factor-authentication \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
 ## Architecture
-
-Keystone v0.3.0+ uses an **API-first, service layer architecture** to isolate external dependencies and provide maximum flexibility for any frontend framework.
 
 ### Service Layer
 
-All role, permission, and passkey operations go through dedicated services:
+All role and permission operations go through dedicated services:
 
-- **PasskeyService** - Manages WebAuthn/passkey operations
-  - `registerOptions()`, `register()`, `authenticationOptions()`, `authenticate()`
 - **RoleService** - Role CRUD and queries
   - `getAllWithPermissions()`, `create()`, `delete()`, `syncPermissions()`
 - **PermissionService** - Permission CRUD and queries
@@ -631,37 +347,35 @@ All role, permission, and passkey operations go through dedicated services:
 - **AuthorizationService** - High-level authorization operations
   - `assignRolesToUser()`, `assignPermissionsToUser()`, `userHasRole()`, `userHasPermission()`
 
-All services are registered in Laravel's service container with interface bindings and convenient aliases:
-- `keystone.passkey`
+All services are registered in Laravel's service container with interface bindings and
+convenient aliases:
 - `keystone.roles`
 - `keystone.permissions`
 - `keystone.authorization`
+- `keystone.cache`
 
 ### Models
 
-Keystone provides its own model classes under the `BSPDX\Keystone\Models` namespace:
-
 - `BSPDX\Keystone\Models\KeystoneRole` - Custom role model with tenant scoping and `isSuperAdmin()`
 - `BSPDX\Keystone\Models\KeystonePermission` - Custom permission model with tenant scoping
-- `BSPDX\Keystone\Models\Passkey` - Passkey record model (wraps the underlying passkey backend)
-
-All public APIs use these Keystone models exclusively — no third-party model classes appear in method signatures or return types.
 
 ### Benefits
 
-- **API-First** - Works with any frontend framework (React, Vue, mobile apps, etc.)
 - **Testability** - Mock service interfaces in tests instead of facades
-- **Maintainability** - All external dependencies isolated in service layer
-- **Flexibility** - Easy to swap implementations or add caching/logging
-- **Clean API** - No third-party classes in your controllers
-- **Optional UI** - Blade components included but completely optional
+- **Maintainability** - RBAC logic isolated in a dedicated service layer
+- **Backend-Only** - No UI to maintain or theme; drop it into any frontend
 
 ## Multi-Tenancy
 
-Keystone provides comprehensive multi-tenant support using **global scopes** for automatic tenant isolation. Roles and permissions can be global (accessible across all tenants) or tenant-specific (isolated per organization).
+Keystone provides comprehensive multi-tenant support using **global scopes** for automatic
+tenant isolation. Roles and permissions can be global (accessible across all tenants) or
+tenant-specific (isolated per organization).
 
-Keystone handles the **RBAC side of multi-tenancy** — scoping roles, permissions, and assignments to a `tenant_id`. It does not provide a `Tenant` model, tenant creation, or user-to-tenant assignment. Your application is responsible for managing tenants and populating `tenant_id` on your `User` model. Keystone reads that value automatically to scope all role and permission queries.
-
+Keystone handles the **RBAC side of multi-tenancy** — scoping roles, permissions, and
+assignments to a `tenant_id`. It does not provide a `Tenant` model, tenant creation, or
+user-to-tenant assignment. Your application is responsible for managing tenants and populating
+`tenant_id` on your `User` model. Keystone reads that value automatically to scope all role and
+permission queries.
 
 ### Quick Start
 
@@ -676,7 +390,7 @@ KEYSTONE_MULTI_TENANT=true
 - **Automatic Tenant Filtering** - Global scopes automatically filter roles/permissions by authenticated user's tenant
 - **Global Roles/Permissions** - Set `tenant_id = NULL` to make roles/permissions accessible across all tenants
 - **Tenant-Specific Roles** - Roles with `tenant_id` are isolated to a single organization
-- **UUID Support** - Works with both UUID and bigint tenant IDs
+- **UUID Support** - `tenant_id` is always a UUID column
 - **Super-Admin Bypass** - Use `::withoutTenant()` scope for cross-tenant operations
 
 ### Usage Examples
@@ -721,8 +435,6 @@ if ($user->canBypassPermissions()) {
 
 ### Keystone Management Commands
 
-Keystone provides artisan commands for managing roles, permissions, and users:
-
 ```bash
 # Create roles and permissions
 php artisan keystone:make-role manager
@@ -733,10 +445,6 @@ php artisan keystone:assign-role admin --user={user_id}
 php artisan keystone:unassign-role admin --user={user_id}
 php artisan keystone:assign-permission edit-posts --role=editor
 php artisan keystone:unassign-permission edit-posts --role=editor
-
-# User management
-php artisan keystone:make-user
-php artisan keystone:change-password
 ```
 
 ### Learn More
@@ -744,40 +452,6 @@ php artisan keystone:change-password
 For comprehensive documentation on multi-tenancy:
 - [Multi-Tenancy Architecture](docs/multi-tenancy.md) - Global scopes vs Spatie teams
 - [Multi-Tenant Usage Examples](docs/examples/multi-tenant-usage.md) - Common patterns and best practices
-- Migration guides for upgrading from single-tenant to multi-tenant
-
-## HTTPS Setup
-
-**Passkeys require HTTPS!** See our detailed guide: [HTTPS Setup for Laravel Sail](docs/https-setup.md)
-
-Quick summary:
-
-1. Install `mkcert`:
-
-    ```bash
-    brew install mkcert  # macOS
-    mkcert -install
-    ```
-
-2. Generate certificates:
-
-    ```bash
-    mkdir -p docker/ssl && cd docker/ssl
-    mkcert localhost 127.0.0.1 ::1
-    mv localhost+2.pem cert.pem
-    mv localhost+2-key.pem key.pem
-    ```
-
-3. Update `.env`:
-
-    ```env
-    APP_URL=https://localhost
-    SESSION_SECURE_COOKIE=true
-    ```
-
-4. Configure Nginx/Caddy to use the certificates
-
-See the full guide for detailed instructions.
 
 ## Testing
 
@@ -793,34 +467,6 @@ Or with PHPUnit directly:
 ./vendor/bin/phpunit
 ```
 
-## Customization
-
-### Custom Blade Views
-
-Publish the views and modify as needed:
-
-```bash
-php artisan vendor:publish --tag=keystone-views
-```
-
-Views will be in `resources/views/vendor/keystone/`.
-
-### Custom Styling
-
-All Blade components use CSS custom properties for easy theming:
-
-```css
-:root {
-    --keystone-primary: #4f46e5;
-    --keystone-primary-hover: #4338ca;
-    --keystone-danger: #dc2626;
-    --keystone-text: #1f2937;
-    --keystone-border: #d1d5db;
-    --keystone-bg: #ffffff;
-    --keystone-radius: 0.5rem;
-}
-```
-
 ## Security
 
 If you discover any security issues, please email info@bspdx.com instead of using the issue tracker.
@@ -828,90 +474,14 @@ If you discover any security issues, please email info@bspdx.com instead of usin
 ## Credits
 
 -   [BSPDX](https://github.com/TheBootstrapParadox)
--   Built with:
-    -   [Laravel Fortify](https://github.com/laravel/fortify)
-    -   [Laravel Sanctum](https://github.com/laravel/sanctum)
-    -   [Spatie Laravel Passkeys](https://github.com/spatie/laravel-passkeys) *(abstracted)*
 
-**Note:** Starting with v0.3.0, all Spatie dependencies are abstracted through Keystone's service layer, providing a clean `BSPDX\Keystone` namespace throughout your application. Starting with v0.8.0, role and permission management uses a custom built-in RBAC system; Spatie Laravel Passkeys remains as the passkey backend.
+**Note:** As of v0.10.0, Keystone is a multi-tenant RBAC package only — it does not provide
+authentication, and has no runtime dependency on Fortify, Sanctum, or any passkey package.
+Bring your own authentication and add the `HasKeystone` trait to your User model.
 
 ## License
 
 The MIT License (MIT). Please see [License File](LICENSE) for more information.
-
----
-
-## Quick Start Example
-
-Here's a complete example to get you started quickly:
-
-### 1. Install Package
-
-```bash
-composer require bspdx/keystone
-php artisan vendor:publish --tag=keystone-config
-php artisan vendor:publish --tag=keystone-migrations
-php artisan migrate
-php artisan db:seed --class=KeystoneSeeder
-```
-
-### 2. Update User Model
-
-```php
-<?php
-
-namespace App\Models;
-
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use BSPDX\Keystone\Traits\HasKeystone;
-
-class User extends Authenticatable
-{
-    use HasKeystone;
-
-    protected $fillable = ['name', 'email', 'password'];
-}
-```
-
-### 3. Create Login Page
-
-```blade
-<!-- resources/views/auth/login.blade.php -->
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Login</title>
-    <meta name="csrf-token" content="{{ csrf_token() }}">
-</head>
-<body>
-    <x-keystone::login-form />
-</body>
-</html>
-```
-
-### 4. Add Routes
-
-```php
-// routes/web.php
-Route::get('/login', function () {
-    return view('auth.login');
-})->name('login');
-
-// Include Keystone routes
-require __DIR__.'/keystone-web.php';
-```
-
-### 5. Test It Out
-
-```bash
-# Start server (with HTTPS for passkeys)
-./vendor/bin/sail up
-
-# Visit https://localhost/login
-# Use demo credentials: admin@example.com / password
-```
-
-That's it! You now have a complete authentication system with 2FA, passkeys, and RBAC.
 
 ## Support
 

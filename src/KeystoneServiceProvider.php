@@ -4,39 +4,24 @@ namespace BSPDX\Keystone;
 
 use BSPDX\Keystone\Console\Commands\AssignPermissionCommand;
 use BSPDX\Keystone\Console\Commands\AssignRoleCommand;
-use BSPDX\Keystone\Console\Commands\ChangePasswordCommand;
 use BSPDX\Keystone\Console\Commands\MakePermissionCommand;
 use BSPDX\Keystone\Console\Commands\MakeRoleCommand;
-use BSPDX\Keystone\Console\Commands\MakeUserCommand;
 use BSPDX\Keystone\Console\Commands\UnassignPermissionCommand;
 use BSPDX\Keystone\Console\Commands\UnassignRoleCommand;
 use BSPDX\Keystone\Http\Middleware\EnsureFeatureEnabled;
 use BSPDX\Keystone\Http\Middleware\EnsureHasPermission;
 use BSPDX\Keystone\Http\Middleware\EnsureHasRole;
-use BSPDX\Keystone\Http\Middleware\EnsureTwoFactorEnabled;
-use BSPDX\Keystone\Http\Middleware\RequirePasskey2FA;
-use BSPDX\Keystone\Http\Middleware\RequirePasswordConfirm;
-use BSPDX\Keystone\Models\Passkey;
 use BSPDX\Keystone\Services\AuthorizationService;
 use BSPDX\Keystone\Services\CacheService;
 use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
-use BSPDX\Keystone\Services\Contracts\PasskeyServiceInterface;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
 use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
-use BSPDX\Keystone\Services\PasskeyService;
 use BSPDX\Keystone\Services\PermissionRegistrar;
 use BSPDX\Keystone\Services\PermissionService;
 use BSPDX\Keystone\Services\RoleService;
-use BSPDX\Keystone\View\Components\LoginForm;
-use BSPDX\Keystone\View\Components\PasskeyLogin;
-use BSPDX\Keystone\View\Components\PasskeyRegister;
-use BSPDX\Keystone\View\Components\RegisterForm;
-use BSPDX\Keystone\View\Components\TwoFactorChallenge;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Support\ServiceProvider;
-use Laravel\Fortify\Contracts\TwoFactorChallengeViewResponse;
-use Laravel\Fortify\Fortify;
 
 class KeystoneServiceProvider extends ServiceProvider
 {
@@ -50,23 +35,7 @@ class KeystoneServiceProvider extends ServiceProvider
             'keystone'
         );
 
-        config([
-            'passkeys.models.passkey'      => Passkey::class,
-            'passkeys.relying_party.name'  => config('keystone.passkey.rp_name'),
-            'passkeys.relying_party.id'    => config('keystone.passkey.rp_id'),
-        ]);
-
-        $this->app->bind(
-            \Spatie\LaravelPasskeys\Actions\GeneratePasskeyRegisterOptionsAction::class,
-            \BSPDX\Keystone\Actions\GeneratePasskeyRegisterOptionsAction::class,
-        );
-
         // Register service interfaces
-        $this->app->singleton(
-            PasskeyServiceInterface::class,
-            PasskeyService::class
-        );
-
         $this->app->singleton(
             RoleServiceInterface::class,
             RoleService::class
@@ -91,11 +60,6 @@ class KeystoneServiceProvider extends ServiceProvider
         $this->app->singleton(PermissionRegistrar::class);
 
         // Register convenient aliases
-        $this->app->alias(
-            PasskeyServiceInterface::class,
-            'keystone.passkey'
-        );
-
         $this->app->alias(
             RoleServiceInterface::class,
             'keystone.roles'
@@ -132,10 +96,8 @@ class KeystoneServiceProvider extends ServiceProvider
             $this->commands([
                 MakePermissionCommand::class,
                 MakeRoleCommand::class,
-                MakeUserCommand::class,
                 AssignRoleCommand::class,
                 AssignPermissionCommand::class,
-                ChangePasswordCommand::class,
                 UnassignRoleCommand::class,
                 UnassignPermissionCommand::class,
             ]);
@@ -155,9 +117,6 @@ class KeystoneServiceProvider extends ServiceProvider
         // Load migrations
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
-        // Load views
-        $this->loadViewsFrom(__DIR__.'/../resources/views', 'keystone');
-
         // Publish configuration
         $this->publishes([
             __DIR__.'/../config/keystone.php' => config_path('keystone.php'),
@@ -167,11 +126,6 @@ class KeystoneServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/../database/migrations' => database_path('migrations'),
         ], 'keystone-migrations');
-
-        // Publish views
-        $this->publishes([
-            __DIR__.'/../resources/views' => resource_path('views/vendor/keystone'),
-        ], 'keystone-views');
 
         // Publish seeders
         $this->publishes([
@@ -189,26 +143,6 @@ class KeystoneServiceProvider extends ServiceProvider
         $router->aliasMiddleware('keystone.feature', EnsureFeatureEnabled::class);
         $router->aliasMiddleware('role', EnsureHasRole::class);
         $router->aliasMiddleware('permission', EnsureHasPermission::class);
-        $router->aliasMiddleware('2fa', EnsureTwoFactorEnabled::class);
-        $router->aliasMiddleware('password-confirm', RequirePasswordConfirm::class);
-        $router->aliasMiddleware('passkey-2fa', RequirePasskey2FA::class);
-
-        // Register Blade components
-        $this->loadViewComponentsAs('keystone', [
-            LoginForm::class,
-            RegisterForm::class,
-            TwoFactorChallenge::class,
-            PasskeyRegister::class,
-            PasskeyLogin::class,
-        ]);
-
-        // Register Fortify two-factor challenge view if Fortify is installed
-        // and the binding hasn't already been set by the application
-        if (class_exists(Fortify::class) && ! $this->app->bound(TwoFactorChallengeViewResponse::class)) {
-            Fortify::twoFactorChallengeView(function () {
-                return view('keystone::two-factor-challenge');
-            });
-        }
 
         // Register permissions with Laravel Gate
         // This enables @can('permission.name') in Blade and Gate::allows() in controllers

@@ -2,51 +2,16 @@
 
 namespace BSPDX\Keystone\Traits;
 
-use BaconQrCode\Renderer\Color\Rgb;
-use BaconQrCode\Renderer\Image\SvgImageBackEnd;
-use BaconQrCode\Renderer\ImageRenderer;
-use BaconQrCode\Renderer\RendererStyle\Fill;
-use BaconQrCode\Renderer\RendererStyle\RendererStyle;
-use BaconQrCode\Writer;
-use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Models\KeystonePermission;
+use BSPDX\Keystone\Models\KeystoneRole;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Laravel\Fortify\TwoFactorAuthenticatable;
-use Laravel\Sanctum\HasApiTokens;
-use Spatie\LaravelPasskeys\Models\Concerns\InteractsWithPasskeys;
 
 trait HasKeystone
 {
-    use HasApiTokens;
-    use TwoFactorAuthenticatable;
-    use InteractsWithPasskeys;
-
-    // ============================================
-    // TWO-FACTOR AUTHENTICATION OVERRIDES
-    // ============================================
-
-    /**
-     * Get the QR code SVG using the size from keystone.two_factor.qr_code_size.
-     * Overrides Fortify's TwoFactorAuthenticatable::twoFactorQrCodeSvg() which hardcodes 192px.
-     */
-    public function twoFactorQrCodeSvg(): string
-    {
-        $size = config('keystone.two_factor.qr_code_size', 200);
-
-        $svg = (new Writer(
-            new ImageRenderer(
-                new RendererStyle($size, 0, null, null, Fill::uniformColor(new Rgb(255, 255, 255), new Rgb(45, 55, 72))),
-                new SvgImageBackEnd
-            )
-        ))->writeString($this->twoFactorQrCodeUrl());
-
-        return trim(substr($svg, strpos($svg, "\n") + 1));
-    }
-
     // ============================================
     // QUERY SCOPES
     // ============================================
@@ -54,7 +19,8 @@ trait HasKeystone
     /**
      * Scope a query to users with the given role.
      */
-    public function scopeRole(Builder $query, string|array $roles): Builder {
+    public function scopeRole(Builder $query, string|array $roles): Builder
+    {
         return $query->whereHas('roles', function ($q) use ($roles) {
             $q->whereIn('name', (array) $roles);
         });
@@ -306,10 +272,11 @@ trait HasKeystone
     public function hasAllRoles(...$roles): bool
     {
         foreach ($roles as $role) {
-            if (!$this->hasRole($role)) {
+            if (! $this->hasRole($role)) {
                 return false;
             }
         }
+
         return true;
     }
 
@@ -400,7 +367,7 @@ trait HasKeystone
         $permissions = collect($permissions)->flatten();
 
         foreach ($permissions as $permission) {
-            if (!$this->hasPermissionTo($permission)) {
+            if (! $this->hasPermissionTo($permission)) {
                 return false;
             }
         }
@@ -440,6 +407,7 @@ trait HasKeystone
             if ($role instanceof KeystoneRole) {
                 return $role;
             }
+
             return KeystoneRole::where('name', $role)->firstOrFail();
         });
     }
@@ -453,6 +421,7 @@ trait HasKeystone
             if ($permission instanceof KeystonePermission) {
                 return $permission;
             }
+
             return KeystonePermission::where('name', $permission)->firstOrFail();
         });
     }
@@ -463,116 +432,6 @@ trait HasKeystone
     protected function forgetCachedPermissions(): void
     {
         Cache::forget("user_permissions_{$this->id}");
-    }
-
-    // ============================================
-    // TWO-FACTOR AUTHENTICATION METHODS
-    // ============================================
-
-    /**
-     * Determine if the user has enabled two-factor authentication.
-     */
-    public function hasTwoFactorEnabled(): bool
-    {
-        return !is_null($this->two_factor_secret) &&
-               !is_null($this->two_factor_confirmed_at);
-    }
-
-    /**
-     * Determine if 2FA is required for this user based on their roles.
-     */
-    public function requires2FA(): bool
-    {
-        $requiredRoles = config('keystone.two_factor.required_for_roles', []);
-
-        if (empty($requiredRoles)) {
-            return false;
-        }
-
-        return $this->hasAnyRole($requiredRoles);
-    }
-
-    // ============================================
-    // PASSKEY METHODS
-    // ============================================
-
-    /**
-     * Determine if the user has registered any passkeys.
-     */
-    public function hasPasskeysRegistered(): bool
-    {
-        return $this->passkeys()->exists();
-    }
-
-    /**
-     * Determine if passkeys are required for this user based on their roles.
-     */
-    public function requiresPasskey(): bool
-    {
-        $requiredRoles = config('keystone.passkey.required_for_roles', []);
-
-        if (empty($requiredRoles)) {
-            return false;
-        }
-
-        return $this->hasAnyRole($requiredRoles);
-    }
-
-    /**
-     * Check if user can use passwordless login.
-     */
-    public function canUsePasswordlessLogin(): bool
-    {
-        return ($this->allow_passkey_login && $this->hasPasskeysRegistered()) ||
-               ($this->allow_totp_login && $this->hasTwoFactorEnabled());
-    }
-
-    // ============================================
-    // AUTHENTICATION METHODS
-    // ============================================
-
-    /**
-     * Get the user's authentication methods.
-     */
-    public function getAuthenticationMethods(): array
-    {
-        return [
-            'password' => true,
-            'two_factor' => $this->hasTwoFactorEnabled(),
-            'passkey' => $this->hasPasskeysRegistered(),
-        ];
-    }
-
-    /**
-     * Get available authentication methods for this user.
-     */
-    public function getAvailableAuthMethods(): array
-    {
-        $methods = [];
-
-        if ($this->require_password) {
-            $methods[] = 'password';
-        }
-
-        if ($this->allow_passkey_login && $this->hasPasskeysRegistered()) {
-            $methods[] = 'passkey';
-        }
-
-        if ($this->allow_totp_login && $this->hasTwoFactorEnabled()) {
-            $methods[] = 'totp';
-        }
-
-        return $methods;
-    }
-
-    /**
-     * Validate that at least one auth method is enabled.
-     */
-    public function hasValidAuthConfiguration(): bool
-    {
-        return $this->require_password ||
-               ($this->allow_passkey_login && $this->hasPasskeysRegistered()) ||
-               ($this->allow_totp_login && $this->hasTwoFactorEnabled());
     }
 
     // ============================================
@@ -595,33 +454,5 @@ trait HasKeystone
     public function canBypassPermissions(): bool
     {
         return $this->isSuperAdmin();
-    }
-
-    // ============================================
-    // STATIC HELPER METHODS
-    // ============================================
-
-    /**
-     * Get the auth preference fillable attributes.
-     */
-    public static function getAuthPreferenceFillable(): array
-    {
-        return [
-            'allow_passkey_login',
-            'allow_totp_login',
-            'require_password',
-        ];
-    }
-
-    /**
-     * Get the auth preference cast attributes.
-     */
-    public static function getAuthPreferenceCasts(): array
-    {
-        return [
-            'allow_passkey_login' => 'boolean',
-            'allow_totp_login' => 'boolean',
-            'require_password' => 'boolean',
-        ];
     }
 }

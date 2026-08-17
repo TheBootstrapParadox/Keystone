@@ -4,6 +4,8 @@ namespace Tests\Unit\Models;
 
 use App\Models\User;
 use BSPDX\Keystone\Models\KeystoneRole;
+use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -18,7 +20,7 @@ class MultiTenantRoleTest extends TestCase
         config(['keystone.features.multi_tenant' => true]);
 
         // Clear permission cache
-        app(\BSPDX\Keystone\Services\Contracts\CacheServiceInterface::class)->clearPermissionCache();
+        app(CacheServiceInterface::class)->clearPermissionCache();
     }
 
     #[Test]
@@ -153,7 +155,7 @@ class MultiTenantRoleTest extends TestCase
 
         // Verify uniqueness: Try to create duplicate in same tenant (should fail due to unique constraint)
         // Database will throw QueryException due to unique constraint violation
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
         KeystoneRole::create(['name' => 'manager', 'title' => 'Manager Duplicate']);
     }
 

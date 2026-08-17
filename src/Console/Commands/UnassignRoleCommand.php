@@ -29,8 +29,9 @@ class UnassignRoleCommand extends Command
         $userIdentifier = $this->argument('user');
         $user = $this->findUser($userIdentifier);
 
-        if (!$user) {
+        if (! $user) {
             $this->error("User '{$userIdentifier}' not found.");
+
             return self::FAILURE;
         }
 
@@ -38,6 +39,7 @@ class UnassignRoleCommand extends Command
 
         if (empty($previousRoles)) {
             $this->info("User '{$user->email}' has no roles to remove.");
+
             return self::SUCCESS;
         }
 
@@ -48,6 +50,7 @@ class UnassignRoleCommand extends Command
 
             if (empty($roles)) {
                 $this->error('No roles specified. Provide role names as arguments or use --role option.');
+
                 return self::FAILURE;
             }
         }
@@ -76,6 +79,7 @@ class UnassignRoleCommand extends Command
             return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to remove roles: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }

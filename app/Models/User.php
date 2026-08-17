@@ -2,17 +2,16 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use BSPDX\Keystone\Traits\HasKeystone;
+use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use BSPDX\Keystone\Traits\HasKeystone;
-use BSPDX\Keystone\Contracts\HasPasskeys;
 
-class User extends Authenticatable implements HasPasskeys
+class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasKeystone;
+    /** @use HasFactory<UserFactory> */
+    use HasFactory, HasKeystone, Notifiable;
 
     /**
      * The attributes that are mass assignable.

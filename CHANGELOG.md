@@ -4,6 +4,51 @@
 
 ---
 
+## [0.10.0] - 2026-08-17
+
+Keystone no longer provides authentication. Fortify integration, Sanctum, passkeys (WebAuthn),
+TOTP two-factor authentication, password confirmation, account deletion, and all Blade UI have
+been removed. Keystone is now a **multi-tenant RBAC package only** — roles, permissions, and
+tenant scoping on top of whatever authentication your application already uses. See the
+Migration Guide below.
+
+### Removed
+
+- **BREAKING:** `laravel/fortify`, `laravel/sanctum`, `spatie/laravel-passkeys`, and `pragmarx/google2fa-laravel` dependencies — Keystone no longer requires or configures any authentication package
+- **BREAKING:** `BSPDX\Keystone\Models\KeystoneUser` and its migration — Keystone no longer ships an owned User model or users-table migration
+- **BREAKING:** `BSPDX\Keystone\Models\Passkey`, `BSPDX\Keystone\Contracts\HasPasskeys`, `PasskeyServiceInterface`, `PasskeyService`, `GeneratePasskeyRegisterOptionsAction`, `PasskeyConfig`
+- **BREAKING:** `LoginController`, `PasskeyAuthController`, `TwoFactorAuthController`, `AccountDeletionController`, `ProfileController`, `ThrottlesAuthentication`
+- **BREAKING:** `RequirePasswordConfirm`, `EnsureTwoFactorEnabled`, `RequirePasskey2FA` middleware and their `password-confirm`/`2fa`/`passkey-2fa` route aliases
+- **BREAKING:** `keystone:make-user` and `keystone:change-password` Artisan commands
+- **BREAKING:** All Blade UI — every published view, `src/View/Components/*`, and the `resources/css`/`resources/js` scaffolding
+- **BREAKING:** `HasKeystone` trait no longer includes `HasApiTokens` (Sanctum), `TwoFactorAuthenticatable` (Fortify), or `InteractsWithPasskeys` (Spatie Passkeys), and no longer exposes `hasTwoFactorEnabled()`, `requires2FA()`, `hasPasskeysRegistered()`, `requiresPasskey()`, `canUsePasswordlessLogin()`, `getAuthenticationMethods()`, `getAvailableAuthMethods()`, `hasValidAuthConfiguration()`, `getAuthPreferenceFillable()`, `getAuthPreferenceCasts()`, or `twoFactorQrCodeSvg()`
+- **BREAKING:** `config('keystone.passkey')`, `config('keystone.two_factor')`, `config('keystone.redirects')`, `config('keystone.rate_limiting')`, `config('keystone.session')`, `config('keystone.profile')`, and the `features.two_factor`/`features.passkeys`/`features.passkey_2fa`/`features.account_deletion`/`features.passwordless_login`/`features.show_permissions` flags
+- **BREAKING:** `config('keystone.user.primary_key_type')` and `config('keystone.user.table_name')`
+- `docs/https-setup.md` — documented HTTPS setup for testing passkeys, which no longer exist in this package
+
+### Changed
+
+- **BREAKING:** `routes/web.php` and `routes/api.php` example files now contain only RBAC-protected route examples
+- `add_keystone_fields_to_users_table` migration now only adds `tenant_id` — it no longer adds Fortify 2FA columns
+- Package description and keywords now describe Keystone as a multi-tenant RBAC package, not an auth orchestration package
+
+### Migration Guide
+
+1. **Remove `KeystoneUser` usage.** If your `User` model extended `KeystoneUser`, change it to extend `Illuminate\Foundation\Auth\User` (or your own base class) and add `use BSPDX\Keystone\Traits\HasKeystone;` directly — see [`docs/USER_MODEL.md`](docs/USER_MODEL.md).
+2. **Own your `users` table migration.** If you relied on Keystone's `create_keystone_users_table` migration to create your `users` table, that migration is gone. Existing databases are unaffected, but fresh installs / `migrate:fresh` now need a `users` table from somewhere else — Laravel's own default `create_users_table` migration, or your own.
+3. **Set up authentication yourself.** Keystone no longer configures Fortify, Sanctum, or passkeys. Install and configure `laravel/fortify` (and `laravel/sanctum`/`laravel/passkeys` if you need tokens or passkeys) directly, exactly as you would in any Laravel app that doesn't use Keystone.
+4. **Remove references to deleted routes/views/commands.** Drop any `keystone-web.php`/`keystone-api.php` includes pointing at the removed login/2FA/passkey/profile/account-deletion routes, delete any published `resources/views/vendor/keystone` customizations, and stop calling `keystone:make-user`/`keystone:change-password`.
+5. **Update `config/keystone.php`.** Re-publish with `php artisan vendor:publish --tag=keystone-config --force` and re-apply any custom `rbac.*`/`features.multi_tenant`/`user.model` values — the `passkey`, `two_factor`, `redirects`, `rate_limiting`, `session`, and `profile` sections, and the `features.show_permissions`/`user.primary_key_type`/`user.table_name` keys, are gone. Note that `config('keystone.user.model')`'s default also changed from `\BSPDX\Keystone\Models\KeystoneUser::class` to `null` (resolving instead through `config('auth.providers.users.model')`) — if you have an already-published `config/keystone.php` that still contains the old `KeystoneUser::class` default and haven't re-published it, you'll get runtime errors (a "class not found"-style failure) since that class no longer exists. Re-publishing the config as described above resolves this.
+6. **Run `php artisan migrate`.** The `create_keystone_users_table`, `create_passkeys_table`, and `add_auth_preferences_to_users_table` migrations are removed; `add_keystone_fields_to_users_table` now only adds `tenant_id`, not 2FA columns. If you already ran the old migrations in production, write your own follow-up migration to drop the now-unused `two_factor_secret`, `two_factor_recovery_codes`, `two_factor_confirmed_at`, `allow_passkey_login`, `allow_totp_login`, and `require_password` columns — Keystone no longer manages them but won't silently drop your data. Also note that `tenant_id` on the `users` table (and pivot tables) is now always a `uuid` column — previously it was `unsignedBigInteger` when `keystone.user.primary_key_type` was not set to `'uuid'` (that config key is now gone). Hosts on bigint tenant IDs need to plan a data migration before running migrations fresh.
+7. **Reimplement any removed `HasKeystone` auth methods you relied on** (`requires2FA()`, `requiresPasskey()`, etc.) using your own authentication package's APIs — Keystone only tracks roles/permissions now.
+8. **Note the removal of `docs/https-setup.md`.** It documented HTTPS setup for testing passkeys, which no longer exist in this package — if you referenced it, follow your own authentication package's HTTPS/local-dev guidance instead.
+
+### Testing
+
+- ✅ All 44 tests passing (117 assertions)
+
+---
+
 ## [0.9.0] - 2026-06-07
 
 ### Added

@@ -1,9 +1,9 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use BSPDX\Keystone\Support\PasskeyConfig;
 
 return new class extends Migration
 {
@@ -13,12 +13,13 @@ return new class extends Migration
     public function up(): void
     {
         // Detect if the authenticatable model uses UUIDs by checking for the HasUuids trait
-        $authenticatableClass = PasskeyConfig::getAuthenticatableModel();
+        $authenticatableClass = config('keystone.user.model')
+            ?? config('auth.providers.users.model', User::class);
         $authenticatable = new $authenticatableClass;
         $useUuids = method_exists($authenticatable, 'uniqueIds') && count($authenticatable->uniqueIds()) > 0;
 
         // Permissions table
-        Schema::create('permissions', function (Blueprint $table) use ($useUuids) {
+        Schema::create('permissions', function (Blueprint $table) {
             $table->id();
 
             // Multi-tenancy support (only if enabled in features)
@@ -43,7 +44,7 @@ return new class extends Migration
         });
 
         // Roles table
-        Schema::create('roles', function (Blueprint $table) use ($useUuids) {
+        Schema::create('roles', function (Blueprint $table) {
             $table->id();
 
             // Multi-tenancy support: Roles can be global (tenant_id = NULL) or tenant-specific

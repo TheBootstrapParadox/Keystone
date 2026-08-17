@@ -2,20 +2,17 @@
     "$schema": "https://getcomposer.org/schema.json",
     "name": "bspdx/keystone",
     "type": "library",
-    "description": "Complete authentication package for Laravel with Fortify, Passkeys, TOTP 2FA, and RBAC",
+    "description": "Multi-tenant role-based access control (RBAC) for Laravel — bring your own authentication",
     "replace": {
         "bspdx/authkit": "self.version"
     },
     "keywords": [
         "laravel",
-        "authentication",
-        "fortify",
-        "passkeys",
-        "webauthn",
-        "2fa",
-        "totp",
         "rbac",
-        "permissions"
+        "permissions",
+        "roles",
+        "multi-tenant",
+        "authorization"
     ],
     "license": "MIT",
     "authors": [
@@ -26,11 +23,7 @@
     ],
     "require": {
         "php": "^8.2.0",
-        "laravel/fortify": "^1.31",
-        "laravel/framework": "^12.0|^13.0",
-        "laravel/sanctum": "^4.0",
-        "pragmarx/google2fa-laravel": "^3.0",
-        "spatie/laravel-passkeys": "^1.5"
+        "laravel/framework": "^12.0|^13.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -60,13 +53,11 @@
             "composer install",
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
             "@php artisan key:generate",
-            "@php artisan migrate --force",
-            "npm install",
-            "npm run build"
+            "@php artisan migrate --force"
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"php artisan pail --timeout=0\" --names=server,queue,logs --kill-others"
         ],
         "test": [
             "@php artisan config:clear --ansi",

@@ -2,10 +2,11 @@
 
 namespace Tests\Unit;
 
-use PHPUnit\Framework\Attributes\Test;
-use Tests\TestCase;
 use App\Models\User;
 use BSPDX\Keystone\Models\KeystoneRole;
+use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
 
 class HasKeystoneTraitTest extends TestCase
 {
@@ -14,96 +15,7 @@ class HasKeystoneTraitTest extends TestCase
         parent::setUp();
 
         // Clear permission cache using Keystone's cache service
-        app(\BSPDX\Keystone\Services\Contracts\CacheServiceInterface::class)->clearPermissionCache();
-    }
-
-    #[Test]
-    public function it_can_check_if_two_factor_is_enabled()
-    {
-        $user = User::factory()->create();
-
-        $this->assertFalse($user->hasTwoFactorEnabled());
-
-        $user->forceFill([
-            'two_factor_secret' => encrypt('test-secret'),
-            'two_factor_confirmed_at' => now(),
-        ])->save();
-
-        $this->assertTrue($user->hasTwoFactorEnabled());
-    }
-
-    #[Test]
-    public function it_returns_false_when_two_factor_secret_is_null()
-    {
-        $user = User::factory()->create([
-            'two_factor_secret' => null,
-            'two_factor_confirmed_at' => null,
-        ]);
-
-        $this->assertFalse($user->hasTwoFactorEnabled());
-    }
-
-    #[Test]
-    public function it_can_check_if_passkeys_are_registered()
-    {
-        $user = User::factory()->create();
-
-        $this->assertFalse($user->hasPasskeysRegistered());
-    }
-
-    #[Test]
-    public function it_can_check_if_two_factor_is_required()
-    {
-        config(['keystone.two_factor.required_for_roles' => ['admin']]);
-
-        $user = User::factory()->create();
-        $adminRole = KeystoneRole::create(['name' => 'admin']);
-
-        $this->assertFalse($user->requires2FA());
-
-        $user->assignRole($adminRole);
-
-        $this->assertTrue($user->requires2FA());
-    }
-
-    #[Test]
-    public function it_returns_false_when_no_roles_require_two_factor()
-    {
-        config(['keystone.two_factor.required_for_roles' => []]);
-
-        $user = User::factory()->create();
-        $adminRole = KeystoneRole::create(['name' => 'admin']);
-        $user->assignRole($adminRole);
-
-        $this->assertFalse($user->requires2FA());
-    }
-
-    #[Test]
-    public function it_can_check_if_passkey_is_required()
-    {
-        config(['keystone.passkey.required_for_roles' => ['admin']]);
-
-        $user = User::factory()->create();
-        $adminRole = KeystoneRole::create(['name' => 'admin']);
-
-        $this->assertFalse($user->requiresPasskey());
-
-        $user->assignRole($adminRole);
-
-        $this->assertTrue($user->requiresPasskey());
-    }
-
-    #[Test]
-    public function it_can_get_authentication_methods()
-    {
-        $user = User::factory()->create();
-
-        $methods = $user->getAuthenticationMethods();
-
-        $this->assertIsArray($methods);
-        $this->assertArrayHasKey('password', $methods);
-        $this->assertArrayHasKey('two_factor', $methods);
-        $this->assertArrayHasKey('passkey', $methods);
+        app(CacheServiceInterface::class)->clearPermissionCache();
     }
 
     #[Test]

@@ -47,6 +47,7 @@ class MakePermissionCommand extends Command
             return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to create permission: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }

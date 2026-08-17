@@ -3,24 +3,20 @@
 namespace BSPDX\Keystone\Services;
 
 use BSPDX\Keystone\Models\KeystoneRole;
-use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
-use Illuminate\Support\Collection;
+use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Collection;
 
 class RoleService implements RoleServiceInterface
 {
     /**
      * The cache service instance.
-     *
-     * @var CacheServiceInterface
      */
     protected CacheServiceInterface $cacheService;
 
     /**
      * Create a new role service instance.
-     *
-     * @param CacheServiceInterface $cacheService
      */
     public function __construct(CacheServiceInterface $cacheService)
     {
@@ -29,8 +25,6 @@ class RoleService implements RoleServiceInterface
 
     /**
      * Get all roles with their permissions.
-     *
-     * @return Collection
      */
     public function getAllWithPermissions(): Collection
     {
@@ -39,10 +33,6 @@ class RoleService implements RoleServiceInterface
 
     /**
      * Create a new role.
-     *
-     * @param string $name
-     * @param string $guardName
-     * @return KeystoneRole
      */
     public function create(string $name, string $guardName = 'web'): KeystoneRole
     {
@@ -55,8 +45,6 @@ class RoleService implements RoleServiceInterface
     /**
      * Delete a role.
      *
-     * @param KeystoneRole $role
-     * @return void
      * @throws \Exception if role cannot be deleted
      */
     public function delete(KeystoneRole $role): void
@@ -70,10 +58,6 @@ class RoleService implements RoleServiceInterface
 
     /**
      * Sync permissions to a role.
-     *
-     * @param KeystoneRole $role
-     * @param array $permissions
-     * @return KeystoneRole
      */
     public function syncPermissions(KeystoneRole $role, array $permissions): KeystoneRole
     {
@@ -84,9 +68,6 @@ class RoleService implements RoleServiceInterface
 
     /**
      * Get all roles for a user.
-     *
-     * @param Authenticatable $user
-     * @return Collection
      */
     public function getUserRoles(Authenticatable $user): Collection
     {
@@ -95,11 +76,6 @@ class RoleService implements RoleServiceInterface
 
     /**
      * Find a role by name.
-     *
-     * @param string $name
-     * @param string $guardName
-     * @param string|null $tenantId
-     * @return KeystoneRole|null
      */
     public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystoneRole
     {
@@ -114,13 +90,10 @@ class RoleService implements RoleServiceInterface
 
     /**
      * Get all roles for a specific tenant.
-     *
-     * @param string|null $tenantId
-     * @return Collection
      */
     public function getAllForTenant(?string $tenantId = null): Collection
     {
-        if (!config('keystone.features.multi_tenant', false)) {
+        if (! config('keystone.features.multi_tenant', false)) {
             return $this->getAllWithPermissions();
         }
 
@@ -135,10 +108,6 @@ class RoleService implements RoleServiceInterface
 
     /**
      * Assign role(s) to a user.
-     *
-     * @param Authenticatable $user
-     * @param string|array $roles
-     * @return void
      */
     public function assignToUser(Authenticatable $user, string|array $roles): void
     {
@@ -147,10 +116,6 @@ class RoleService implements RoleServiceInterface
 
     /**
      * Remove role(s) from a user.
-     *
-     * @param Authenticatable $user
-     * @param string|array $roles
-     * @return void
      */
     public function removeFromUser(Authenticatable $user, string|array $roles): void
     {
@@ -159,8 +124,6 @@ class RoleService implements RoleServiceInterface
 
     /**
      * Clear the role and permission cache.
-     *
-     * @return void
      */
     public function clearCache(): void
     {

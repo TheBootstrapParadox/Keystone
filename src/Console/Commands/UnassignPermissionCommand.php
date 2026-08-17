@@ -33,13 +33,15 @@ class UnassignPermissionCommand extends Command
         $fromUser = $this->option('from-user');
 
         // Validate target
-        if (!$fromRole && !$fromUser) {
+        if (! $fromRole && ! $fromUser) {
             $this->error('You must specify either --from-role or --from-user.');
+
             return self::FAILURE;
         }
 
         if ($fromRole && $fromUser) {
             $this->error('You cannot specify both --from-role and --from-user. Choose one.');
+
             return self::FAILURE;
         }
 
@@ -65,8 +67,9 @@ class UnassignPermissionCommand extends Command
             ->where('guard_name', $guard)
             ->first();
 
-        if (!$role) {
+        if (! $role) {
             $this->error("Role '{$roleName}' not found for guard '{$guard}'.");
+
             return self::FAILURE;
         }
 
@@ -74,6 +77,7 @@ class UnassignPermissionCommand extends Command
 
         if (empty($previousPermissions)) {
             $this->info("Role '{$role->name}' has no permissions to remove.");
+
             return self::SUCCESS;
         }
 
@@ -84,6 +88,7 @@ class UnassignPermissionCommand extends Command
 
             if (empty($permissions)) {
                 $this->error('No permissions specified. Provide permission names as arguments or use --permission option.');
+
                 return self::FAILURE;
             }
         }
@@ -113,6 +118,7 @@ class UnassignPermissionCommand extends Command
             return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to remove permissions: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }
@@ -124,8 +130,9 @@ class UnassignPermissionCommand extends Command
     {
         $user = $this->findUser($userIdentifier);
 
-        if (!$user) {
+        if (! $user) {
             $this->error("User '{$userIdentifier}' not found.");
+
             return self::FAILURE;
         }
 
@@ -133,6 +140,7 @@ class UnassignPermissionCommand extends Command
 
         if (empty($previousPermissions)) {
             $this->info("User '{$user->email}' has no direct permissions to remove.");
+
             return self::SUCCESS;
         }
 
@@ -143,6 +151,7 @@ class UnassignPermissionCommand extends Command
 
             if (empty($permissions)) {
                 $this->error('No permissions specified. Provide permission names as arguments or use --permission option.');
+
                 return self::FAILURE;
             }
         }
@@ -165,13 +174,14 @@ class UnassignPermissionCommand extends Command
                     ['Previous Direct Permissions', implode(', ', $previousPermissions) ?: '(none)'],
                     ['Removed Permissions', implode(', ', $permissions)],
                     ['Current Direct Permissions', implode(', ', $currentPermissions) ?: '(none)'],
-                    ['All Permissions (incl. via roles)', count($allPermissions) . ' total'],
+                    ['All Permissions (incl. via roles)', count($allPermissions).' total'],
                 ]
             );
 
             return self::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Failed to remove permissions: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }

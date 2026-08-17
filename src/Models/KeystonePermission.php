@@ -2,8 +2,9 @@
 
 namespace BSPDX\Keystone\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
 
@@ -19,8 +20,8 @@ use Illuminate\Support\Collection;
  * @property string $guard_name
  * @property string|null $title
  * @property string|null $description
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  *
  * @method static Builder withoutTenant()
  * @method static Builder global()
@@ -70,8 +71,6 @@ class KeystonePermission extends Model
 
     /**
      * The "booted" method of the model.
-     *
-     * @return void
      */
     protected static function booted(): void
     {
@@ -83,7 +82,7 @@ class KeystonePermission extends Model
                 $tableName = $query->getModel()->getTable();
                 $query->where(function ($q) use ($tableName) {
                     $q->where("{$tableName}.tenant_id", auth()->user()->tenant_id)
-                      ->orWhereNull("{$tableName}.tenant_id"); // Allow access to global permissions (tenant_id = null)
+                        ->orWhereNull("{$tableName}.tenant_id"); // Allow access to global permissions (tenant_id = null)
                 });
             }
         });
@@ -91,12 +90,12 @@ class KeystonePermission extends Model
         // Auto-set tenant_id and guard_name when creating permissions
         static::creating(function ($permission) {
             // Set guard_name if not provided
-            if (!isset($permission->guard_name)) {
+            if (! isset($permission->guard_name)) {
                 $permission->guard_name = 'web';
             }
 
             // Set tenant_id for multi-tenant mode
-            if (config('keystone.features.multi_tenant', false) && auth()->check() && !isset($permission->tenant_id)) {
+            if (config('keystone.features.multi_tenant', false) && auth()->check() && ! isset($permission->tenant_id)) {
                 $permission->tenant_id = auth()->user()->tenant_id;
             }
         });
@@ -108,8 +107,6 @@ class KeystonePermission extends Model
 
     /**
      * Get the roles that have this permission.
-     *
-     * @return BelongsToMany
      */
     public function roles(): BelongsToMany
     {
@@ -128,7 +125,7 @@ class KeystonePermission extends Model
     /**
      * Assign this permission to one or more roles.
      *
-     * @param mixed ...$roles
+     * @param  mixed  ...$roles
      * @return $this
      */
     public function assignRole(...$roles): self
@@ -144,7 +141,7 @@ class KeystonePermission extends Model
     /**
      * Sync the permission's roles (removes existing, adds new).
      *
-     * @param mixed ...$roles
+     * @param  mixed  ...$roles
      * @return $this
      */
     public function syncRoles(...$roles): self
@@ -160,7 +157,7 @@ class KeystonePermission extends Model
     /**
      * Remove this permission from one or more roles.
      *
-     * @param mixed ...$roles
+     * @param  mixed  ...$roles
      * @return $this
      */
     public function removeRole(...$roles): self
@@ -176,8 +173,7 @@ class KeystonePermission extends Model
     /**
      * Check if this permission is assigned to a specific role.
      *
-     * @param mixed $role
-     * @return bool
+     * @param  mixed  $role
      */
     public function hasRole($role): bool
     {
@@ -199,8 +195,7 @@ class KeystonePermission extends Model
     /**
      * Check if this permission is assigned to any of the given roles.
      *
-     * @param mixed ...$roles
-     * @return bool
+     * @param  mixed  ...$roles
      */
     public function hasAnyRole(...$roles): bool
     {
@@ -215,8 +210,6 @@ class KeystonePermission extends Model
 
     /**
      * Get the names of all roles that have this permission.
-     *
-     * @return Collection
      */
     public function getRoleNames(): Collection
     {
@@ -229,9 +222,6 @@ class KeystonePermission extends Model
 
     /**
      * Convert various role representations to KeystoneRole models.
-     *
-     * @param array $roles
-     * @return Collection
      */
     protected function convertToRoleModels(array $roles): Collection
     {
@@ -254,8 +244,6 @@ class KeystonePermission extends Model
 
     /**
      * Clear cached permissions for all users with this permission.
-     *
-     * @return void
      */
     protected function forgetCachedPermissions(): void
     {
@@ -265,8 +253,6 @@ class KeystonePermission extends Model
 
     /**
      * Check if this is a global permission (accessible across all tenants).
-     *
-     * @return bool
      */
     public function isGlobal(): bool
     {
@@ -276,8 +262,7 @@ class KeystonePermission extends Model
     /**
      * Check if this permission belongs to a specific tenant.
      *
-     * @param string|int|null $tenantId
-     * @return bool
+     * @param  string|int|null  $tenantId
      */
     public function belongsToTenant($tenantId): bool
     {
@@ -286,8 +271,6 @@ class KeystonePermission extends Model
 
     /**
      * Get display name (title if available, otherwise name).
-     *
-     * @return string
      */
     public function getDisplayNameAttribute(): string
     {
@@ -301,9 +284,6 @@ class KeystonePermission extends Model
     /**
      * Scope a query to exclude the tenant scope.
      * Use sparingly and only for super-admin operations.
-     *
-     * @param Builder $query
-     * @return Builder
      */
     public function scopeWithoutTenant(Builder $query): Builder
     {
@@ -312,9 +292,6 @@ class KeystonePermission extends Model
 
     /**
      * Scope a query to only return global permissions (tenant_id = NULL).
-     *
-     * @param Builder $query
-     * @return Builder
      */
     public function scopeGlobal(Builder $query): Builder
     {
@@ -323,9 +300,6 @@ class KeystonePermission extends Model
 
     /**
      * Scope a query to only return tenant-specific permissions.
-     *
-     * @param Builder $query
-     * @return Builder
      */
     public function scopeTenantSpecific(Builder $query): Builder
     {
@@ -336,16 +310,14 @@ class KeystonePermission extends Model
      * Scope a query to return permissions for a specific tenant.
      * Includes both global and tenant-specific permissions.
      *
-     * @param Builder $query
-     * @param string|int $tenantId
-     * @return Builder
+     * @param  string|int  $tenantId
      */
     public function scopeForTenant(Builder $query, $tenantId): Builder
     {
         return $query->withoutGlobalScope('tenant')
             ->where(function ($q) use ($tenantId) {
                 $q->where('tenant_id', $tenantId)
-                  ->orWhereNull('tenant_id');
+                    ->orWhereNull('tenant_id');
             });
     }
 }

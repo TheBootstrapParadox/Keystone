@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Console\Commands\Concerns;
 
+use App\Models\User;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
 
 trait InteractsWithKeystone
@@ -12,8 +13,9 @@ trait InteractsWithKeystone
     protected function getUserModel(): string
     {
         return config('keystone.user.model')
-            ?? config('auth.providers.users.model', \App\Models\User::class);
+            ?? config('auth.providers.users.model', User::class);
     }
+
     /**
      * Get the default guard name from config.
      */
@@ -29,9 +31,10 @@ trait InteractsWithKeystone
     {
         $guard = $this->option('guard');
 
-        if ($guard && !array_key_exists($guard, config('auth.guards'))) {
+        if ($guard && ! array_key_exists($guard, config('auth.guards'))) {
             $this->error("Guard [{$guard}] is not defined in your auth configuration.");
-            $this->info('Available guards: ' . implode(', ', array_keys(config('auth.guards'))));
+            $this->info('Available guards: '.implode(', ', array_keys(config('auth.guards'))));
+
             return null;
         }
 
@@ -52,14 +55,6 @@ trait InteractsWithKeystone
     protected function getSuperAdminRole(): string
     {
         return config('keystone.rbac.super_admin_role', 'super-admin');
-    }
-
-    /**
-     * Get the default role from config.
-     */
-    protected function getDefaultRole(): ?string
-    {
-        return config('keystone.rbac.default_role');
     }
 
     /**
