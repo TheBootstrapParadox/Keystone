@@ -26,7 +26,7 @@ class PermissionRegistrar
     /**
      * The cache key for storing permissions.
      */
-    protected string $cacheKey = 'keystone.permissions.all';
+    protected string $cacheKey = 'keystone.permissions.all.v2';
 
     public function __construct(CacheRepository $cache)
     {
@@ -86,13 +86,19 @@ class PermissionRegistrar
      */
     protected function getPermissions()
     {
-        return $this->cache->remember(
+        $rows = $this->cache->remember(
             $this->cacheKey,
             $this->cacheExpiration(),
-            function () {
-                return KeystonePermission::withoutTenant()->get();
-            }
+            fn() => KeystonePermission::withoutTenant()
+                ->get(['name', 'guard_name'])
+                ->map(fn($permission) => [
+                    'name' => $permission->name,
+                    'guard_name' => $permission->guard_name,
+                ])
+                ->all()
         );
+
+        return collect($rows);
     }
 
     /**
