@@ -4,6 +4,98 @@
 
 ---
 
+## [0.11.0] - 2027-09-29
+
+### Added
+
+- `KeystoneRole::findByNameForTenant($name, $tenantId)` and `KeystonePermission::findByNameForTenant($name, $tenantId)` look up a role or permission by name as seen from a given tenant. They ignore the caller's scope, and prefer the tenant's own row over a global one.
+- `PUT /api/users/{user}/roles` (`api.users.roles.sync`), `PUT /api/users/{user}/permissions` (`api.users.permissions.sync`), and `PUT /api/roles/{role}/permissions` (`api.roles.permissions.sync`). Each **replaces** the set; send `[]` to clear it. They use the same `permission:` middleware as their `POST` counterparts.
+- `AuthorizationServiceInterface::syncRolesForUser()` and `syncPermissionsForUser()` replace a user's roles or direct permissions.
+
+### Changed
+
+- **BREAKING:** In multi-tenant mode, role and permission **names** now resolve in the tenant of whatever receives them: the target user for `assignRole` / `removeRole` / `syncRoles` / `givePermissionTo` / `revokePermissionTo` / `syncPermissions` (including through the services, API and commands), the role for `KeystoneRole` permission methods, and the permission for `KeystonePermission` role methods. The receiver's own tenant row wins over a global row with the same name. A receiver with no tenant only matches global rows. A name that exists only in another tenant now throws `ModelNotFoundException` (404 through the API) instead of attaching that tenant's row. Single-tenant installs are unaffected.
+- **BREAKING:** `hasRole()`, `hasAnyRole()`, and `hasAllRoles()` on `HasKeystone` no longer pass automatically for super-admins. They now return `true` only for roles the user actually holds. Before, a super-admin "had" every role, including role names that don't exist. The super-admin bypass is unchanged everywhere access is enforced: permission checks, `can()` / `Gate`, the `role:` and `permission:` middleware, and `AuthorizationService::userHasRole()` / `userHasAnyRole()` / `userHasAllRoles()`.
+- **BREAKING:** `POST /api/users/{user}/roles`, `POST /api/users/{user}/permissions`, and `POST /api/roles/{role}/permissions` now **add** to the existing set. Before, they replaced it. Already-held items are not duplicated, and an empty array is rejected with 422.
+- **BREAKING:** `AuthorizationServiceInterface::assignRolesToUser()` / `assignPermissionsToUser()` now **add** instead of replacing.
+- **BREAKING (custom implementers only):** `AuthorizationServiceInterface` has two new methods, `syncRolesForUser()` and `syncPermissionsForUser()`.
+- **BREAKING:** `KeystonePermission::forTenant($tenantId)` now returns only that tenant's permissions. It no longer includes global permissions (`tenant_id = NULL`), and it no longer removes the automatic tenant scope. This makes it match `KeystoneRole::forTenant()`, which already behaved this way. Both scopes now also qualify `tenant_id` with the table name, to avoid ambiguous-column errors in joined queries.
+- The permission-list cache key is now `keystone.permissions.all.v2`, and the cache stores plain `name`/`guard_name` arrays instead of serialized Eloquent models. Entries under the old `keystone.permissions.all` key are ignored and expire on their own.
+
+### Fixed
+
+- Assigning roles or permissions **by name** in multi-tenant mode could attach **another tenant's** row with the same name. Names were resolved in the logged-in caller's tenant scope, so a caller with no tenant (a global admin, a console command, or a queued job) matched rows from every tenant and took whichever came first. A name existing both in the target's tenant and globally also gave an arbitrary result. Reported in PR #2 review.
+- A super-admin no longer "has" nonexistent roles: `hasRole('typo-role')` returned `true`, which hid typos and gave wrong identity answers (badges, dashboards, user lists).
+- The `keystone.permissions.all.v2` cache is now cleared automatically whenever a `KeystonePermission` is created, updated, or deleted, whether through the model, `PermissionService`, the API, the console commands, or the seeder. Before this, only the console commands cleared it, so `PermissionRegistrar::permissionExists()` / `getAllPermissionNames()` could return a stale list for up to `rbac.cache_expiration` (24 hours by default). Bulk query updates and deletes (`KeystonePermission::query()->update()/delete()`) bypass model events. Call `CacheServiceInterface::clearPermissionCache()` after those.
+- The `role:` and `permission:` middleware no longer call `redirect()->route('login')` for unauthenticated requests. That route isn't defined by Keystone, so apps without a route named `login` got a 500 `RouteNotFoundException`. They now throw `Illuminate\Auth\AuthenticationException`, the same as Laravel's `auth` middleware, and the app's own guest handling decides the response. JSON requests get **401**. Browser requests are redirected via the app's `redirectGuestsTo` / `AuthenticationException::redirectUsing()` callback, or to the `login` route if one exists, and the intended URL is now remembered. Web apps with a `login` route see the same redirect as before.
+- `/users/{user}/...` API endpoints (`assignRoles`, `syncRoles`, `assignPermissions`, `syncPermissions`, `userRolesPermissions`) returned 404 for every user when the consuming application defined its own `{user}` route binding (`Route::model('user', ...)` or `Route::bind('user', ...)`). The bound model was converted to its JSON string and then looked up as a user ID. The controller now uses the bound user model as it is, and still applies the cross-tenant 404 check to it.
+- The permission list cache (`PermissionRegistrar::permissionExists()` / `getAllPermissionNames()`) could keep stale data for the full cache TTL when permissions changed inside a database transaction. It is now also cleared after the transaction commits or rolls back. Before, a concurrent request could refill it from the pre-commit rows, or the transaction itself could fill it with rows that were then rolled back.
+
+### Removed
+
+- The no-op `KeystonePermission::forgetCachedPermissions()` (an unimplemented TODO), and the `HasKeystone` code that cleared an unused `user_permissions_{id}` cache key after every role/permission change. Both methods were `protected` and had no observable effect. If your User model overrode `forgetCachedPermissions()`, Keystone no longer calls it.
+
+### Security
+
+- **Management API `/api/users/{user}/…` routes acted on the authenticated caller instead of the user in the URL.** `RolePermissionController` type-hinted the `{user}` parameter as the `Authenticatable` interface, which route model binding can't resolve. Laravel filled it with the logged-in user instead. Any caller holding `assign-roles` could therefore grant **themselves** any role, including `super-admin`, via `POST /api/users/{anyone}/roles`. `POST /api/users/{user}/permissions` had the same flaw, and `GET /api/users/{user}/roles-permissions` always returned the caller's own data. The controller now resolves `{user}` against the configured user model (`keystone.user.model`, else `auth.providers.users.model`) and returns **404** for unknown IDs. In multi-tenant mode, a caller who has a tenant gets **404** for users in other tenants. Keystone does not register a global `{user}` route binding, so your app's own bindings are untouched. Non-breaking. **If you registered the example API routes, audit role and permission assignments for accounts that granted themselves access**, for example `super-admin` held by users who only had `assign-roles`.
+
+### Testing
+
+- Added commit and rollback coverage for permission cache invalidation in `tests/Unit/Services/PermissionRegistrarTest.php`.
+- Added coverage to `tests/Feature/UserRouteBindingTest.php` for app-level `{user}` bindings, including a check that a tenant caller still gets a 404 for a user in another tenant when the app binds `{user}`.
+- All 106 tests passing (259 assertions); single-tenant suite passing (38 tests, 4 skipped).
+
+### Breaking Changes
+
+#### `KeystonePermission::forTenant()` excludes globals and respects the tenant scope
+
+`forTenant()` now means "this tenant's rows only" on both models. A tenant user calling `forTenant()` with another tenant's ID now gets an empty result instead of that tenant's permissions.
+
+**Migration Guide:**
+
+1. Search your code for `KeystonePermission::forTenant(` (and `->forTenant(` on permission queries).
+2. If you wanted **the current user's tenant plus global permissions**, drop `forTenant()`. The automatic tenant scope already gives you exactly that: `KeystonePermission::query()->get()`.
+3. If you wanted **a specific tenant plus global permissions**, write it explicitly:
+   ```php
+   KeystonePermission::withoutTenant()
+       ->where(fn ($q) => $q->where('tenant_id', $tenantId)->orWhereNull('tenant_id'))
+       ->get();
+   ```
+4. If you relied on `forTenant()` to **read another tenant's permissions**, add `withoutTenant()` first: `KeystonePermission::withoutTenant()->forTenant($tenantId)->get()`.
+
+#### "Assign" now adds; use `PUT` / `sync*ForUser()` to replace
+
+The assign endpoints and service methods used to wipe and replace the whole set. They now keep existing assignments.
+
+**Migration Guide:**
+
+1. **Published route files:** if you published `routes/keystone-api.php`, copy the three new `PUT` routes (`api.users.roles.sync`, `api.users.permissions.sync`, `api.roles.permissions.sync`) from the package's `routes/api.php`. Your existing `POST` routes keep working, but they now add.
+2. **API clients** that send the full desired set with `POST` and expect everything else to be removed must switch to `PUT` with the same body.
+3. **Service callers:** replace `assignRolesToUser()` / `assignPermissionsToUser()` with `syncRolesForUser()` / `syncPermissionsForUser()` wherever you relied on replacement.
+4. **Custom `AuthorizationServiceInterface` implementations** must add `syncRolesForUser()` and `syncPermissionsForUser()`.
+
+#### Role checks are literal for super-admins
+
+**Migration Guide:**
+
+1. Search your code for `->hasRole(`, `->hasAnyRole(`, and `->hasAllRoles(`, including Blade `@if` checks and policies.
+2. If a check is about **identity** ("is this user an editor?"), leave it. It's now correct.
+3. If a check is about **access** and super-admins should pass, switch to one of these:
+   - `$user->isSuperAdmin() || $user->hasRole('editor')`
+   - `app(AuthorizationServiceInterface::class)->userHasRole($user, 'editor')` (keeps the bypass)
+   - a permission check (`$user->can('edit-posts')` / `hasPermissionTo()`), which is the recommended way to gate access
+   - assigning the role to your super-admins explicitly
+4. The `role:` middleware is unaffected. Super-admins still pass role-gated routes.
+
+#### Names resolve in the receiver's tenant
+
+**Migration Guide:**
+
+1. Most apps need no changes. Assignments within a tenant, and assignments of global roles and permissions, behave as before and are now deterministic.
+2. If you give a user **with no tenant** a **tenant-specific** role or permission by name, pass the model instead: `$user->assignRole(KeystoneRole::withoutTenant()->forTenant($tenantId)->where('name', 'manager')->firstOrFail())`. Model instances are always used as given.
+3. If you relied on a global admin, command, or job attaching a role from a *different* tenant by name, that was the bug. Pass the model explicitly if it's really intended.
+4. Code that catches `ModelNotFoundException` from assignment methods may now see it where a wrong-tenant row used to be attached silently.
+
 ## [0.10.1] - 2026-08-17
 
 ### Fixed
