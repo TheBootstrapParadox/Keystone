@@ -87,6 +87,41 @@ class UserRouteBindingTest extends TestCase
     }
 
     #[Test]
+    public function an_app_level_user_route_binding_is_honoured()
+    {
+        Route::model('user', User::class);
+        [$caller, $target] = User::factory()->count(2)->create();
+
+        $this->actingAs($caller)
+            ->postJson("/users/{$target->id}/roles", ['roles' => ['editor']])
+            ->assertOk()
+            ->assertJsonPath('user.id', $target->id);
+
+        $this->actingAs($caller)
+            ->getJson("/users/{$target->id}/roles-permissions")
+            ->assertOk()
+            ->assertJsonPath('user.id', $target->id);
+
+        $this->assertTrue($target->fresh()->hasRole('editor'));
+    }
+
+    #[Test]
+    public function an_app_level_user_route_binding_cannot_bypass_tenant_isolation()
+    {
+        $this->requireTenantSchema();
+        config(['keystone.features.multi_tenant' => true]);
+        Route::model('user', User::class);
+        $caller = User::factory()->create(['tenant_id' => (string) Str::uuid()]);
+        $target = User::factory()->create(['tenant_id' => (string) Str::uuid()]);
+
+        $this->actingAs($caller)
+            ->postJson("/users/{$target->id}/roles", ['roles' => ['editor']])
+            ->assertNotFound();
+
+        $this->assertFalse($target->fresh()->hasRole('editor'));
+    }
+
+    #[Test]
     public function tenant_caller_cannot_reach_a_user_in_another_tenant()
     {
         $this->requireTenantSchema();

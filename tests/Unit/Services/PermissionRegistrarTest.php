@@ -7,8 +7,10 @@ use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
 use BSPDX\Keystone\Services\PermissionRegistrar;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
+use RuntimeException;
 use Tests\TestCase;
 
 class PermissionRegistrarTest extends TestCase
@@ -110,5 +112,38 @@ class PermissionRegistrarTest extends TestCase
         app(PermissionServiceInterface::class)->create('archive-posts');
 
         $this->assertTrue($registrar->permissionExists('archive-posts'));
+    }
+
+    #[Test]
+    public function cache_refilled_with_old_rows_before_commit_is_invalidated_on_commit(): void
+    {
+        $registrar = app(PermissionRegistrar::class);
+
+        DB::transaction(function () {
+            KeystonePermission::create(['name' => 'publish-posts']);
+
+            // Another request, not seeing the uncommitted row, refills the cache
+            cache()->put('keystone.permissions.all.v2', [], 3600);
+        });
+
+        $this->assertTrue($registrar->permissionExists('publish-posts'));
+    }
+
+    #[Test]
+    public function cache_filled_inside_a_rolled_back_transaction_is_invalidated(): void
+    {
+        $registrar = app(PermissionRegistrar::class);
+
+        try {
+            DB::transaction(function () use ($registrar) {
+                KeystonePermission::create(['name' => 'ghost-permission']);
+                $this->assertTrue($registrar->permissionExists('ghost-permission')); // fills the cache
+
+                throw new RuntimeException('roll back');
+            });
+        } catch (RuntimeException) {
+        }
+
+        $this->assertFalse($registrar->permissionExists('ghost-permission'));
     }
 }

@@ -92,8 +92,8 @@ class KeystonePermission extends Model
         });
 
         // Keep the registrar's cached permission list in sync with the table
-        static::saved(fn () => app(PermissionRegistrar::class)->forgetCachedPermissions());
-        static::deleted(fn () => app(PermissionRegistrar::class)->forgetCachedPermissions());
+        static::saved(fn (self $permission) => $permission->forgetCachedPermissions());
+        static::deleted(fn (self $permission) => $permission->forgetCachedPermissions());
 
         // Auto-set tenant_id and guard_name when creating permissions
         static::creating(function ($permission) {
@@ -248,6 +248,27 @@ class KeystonePermission extends Model
 
             throw new \InvalidArgumentException('Invalid role type provided');
         });
+    }
+
+    /**
+     * Invalidate the registrar's cached permission list.
+     *
+     * Cleared now so reads later in the same transaction see this change, and
+     * again once the transaction settles: on commit, in case another request
+     * refilled the cache from pre-commit rows; on rollback, in case this
+     * transaction refilled it with rows that no longer exist.
+     */
+    protected function forgetCachedPermissions(): void
+    {
+        $forget = fn () => app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $forget();
+
+        $connection = $this->getConnection();
+        if ($connection->transactionLevel() > 0) {
+            $connection->afterCommit($forget);
+            $connection->afterRollBack($forget);
+        }
     }
 
     /**

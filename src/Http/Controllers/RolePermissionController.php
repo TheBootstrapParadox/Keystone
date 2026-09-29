@@ -112,7 +112,7 @@ class RolePermissionController
     /**
      * Add roles to a user, keeping the roles they already hold.
      */
-    public function assignRoles(Request $request, string $user): JsonResponse
+    public function assignRoles(Request $request, Model|string $user): JsonResponse
     {
         $user = $this->resolveUser($user);
 
@@ -136,7 +136,7 @@ class RolePermissionController
     /**
      * Replace a user's roles with exactly the given set.
      */
-    public function syncRoles(Request $request, string $user): JsonResponse
+    public function syncRoles(Request $request, Model|string $user): JsonResponse
     {
         $user = $this->resolveUser($user);
 
@@ -160,7 +160,7 @@ class RolePermissionController
     /**
      * Add direct permissions to a user, keeping the ones they already hold.
      */
-    public function assignPermissions(Request $request, string $user): JsonResponse
+    public function assignPermissions(Request $request, Model|string $user): JsonResponse
     {
         $user = $this->resolveUser($user);
 
@@ -184,7 +184,7 @@ class RolePermissionController
     /**
      * Replace a user's direct permissions with exactly the given set.
      */
-    public function syncPermissions(Request $request, string $user): JsonResponse
+    public function syncPermissions(Request $request, Model|string $user): JsonResponse
     {
         $user = $this->resolveUser($user);
 
@@ -244,7 +244,7 @@ class RolePermissionController
     /**
      * Get user's roles and permissions.
      */
-    public function userRolesPermissions(string $user): JsonResponse
+    public function userRolesPermissions(Model|string $user): JsonResponse
     {
         $user = $this->resolveUser($user);
 
@@ -300,15 +300,19 @@ class RolePermissionController
      * Resolve the {user} route segment to the configured user model.
      *
      * Resolved here rather than via a global Route::bind('user') so the
-     * consuming app's own {user} bindings are left alone. Users in another
-     * tenant are reported as missing (404) rather than forbidden.
+     * consuming app's own {user} bindings are left alone. If the app does bind
+     * {user} (Route::model / Route::bind), the bound model arrives here and is
+     * used as-is. Users in another tenant are reported as missing (404)
+     * rather than forbidden, however they were resolved.
      */
-    private function resolveUser(string $id): Model&Authenticatable
+    private function resolveUser(Model|string $user): Model&Authenticatable
     {
         $userModel = config('keystone.user.model')
             ?? config('auth.providers.users.model', User::class);
 
-        $user = $userModel::findOrFail($id);
+        if (! $user instanceof $userModel) {
+            $user = $userModel::findOrFail($user instanceof Model ? $user->getKey() : $user);
+        }
 
         $callerTenant = auth()->user()?->tenant_id;
 
