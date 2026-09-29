@@ -27,6 +27,7 @@
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
+        "larastan/larastan": "^3.12",
         "laravel/pail": "^1.2.2",
         "laravel/pint": "^1.24",
         "laravel/sail": "^1.41",
@@ -67,6 +68,9 @@
             "@php artisan config:clear --ansi",
             "./vendor/bin/phpunit -c phpunit.single-tenant.xml"
         ],
+        "lint": "pint --test",
+        "lint:fix": "pint",
+        "analyze": "phpstan analyze",
         "version": [
             "@php -r \"echo 'Current version: '; passthru('git describe --tags --abbrev=0 2>/dev/null || echo No version tags yet');\""
         ],
