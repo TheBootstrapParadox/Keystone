@@ -234,4 +234,32 @@ class MultiTenantRoleAssignmentTest extends TestCase
         $this->assertTrue($userB->hasRole('admin'));
         $this->assertFalse($userB->hasRole('editor')); // Tenant A role not accessible
     }
+
+    #[Test]
+    public function super_admin_does_not_see_a_role_held_only_in_another_tenant()
+    {
+        config(['keystone.rbac.super_admin_role' => 'super-admin']);
+        $tenantAId = '019c17d6-1a87-71be-a6a4-718da52579e9';
+        $tenantBId = '019c17d7-2b98-82cf-b7b5-82be35f4c8fa';
+
+        KeystoneRole::withoutTenant()->create(['name' => 'super-admin', 'tenant_id' => null]);
+        $editor = KeystoneRole::withoutTenant()->create(['name' => 'editor', 'tenant_id' => null]);
+
+        $user = User::factory()->create(['tenant_id' => $tenantAId]);
+        $user->assignRole('super-admin');
+
+        // Editor assigned only under tenant B's pivot scope
+        DB::table('model_has_roles')->insert([
+            'role_id' => $editor->id,
+            'model_type' => $user->getMorphClass(),
+            'model_id' => $user->id,
+            'tenant_id' => $tenantBId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $user = $user->fresh();
+        $this->assertTrue($user->isSuperAdmin());
+        $this->assertFalse($user->hasRole('editor'));
+    }
 }

@@ -45,4 +45,41 @@ class HasKeystoneTraitTest extends TestCase
 
         $this->assertTrue($user->canBypassPermissions());
     }
+
+    #[Test]
+    public function super_admin_role_checks_are_literal()
+    {
+        config(['keystone.rbac.super_admin_role' => 'super-admin']);
+        KeystoneRole::create(['name' => 'super-admin']);
+        KeystoneRole::create(['name' => 'editor']);
+        KeystoneRole::create(['name' => 'admin']);
+
+        $user = User::factory()->create();
+        $user->assignRole('super-admin');
+
+        $this->assertTrue($user->isSuperAdmin());
+        $this->assertFalse($user->hasRole('nonexistent-role'));
+        $this->assertFalse($user->hasRole('editor'));
+        $this->assertTrue($user->hasRole('super-admin'));
+        $this->assertFalse($user->hasAnyRole('editor', 'admin'));
+        $this->assertFalse($user->hasAllRoles('super-admin', 'editor'));
+
+        $user->assignRole('editor');
+
+        $this->assertTrue($user->hasRole('editor'));
+        $this->assertTrue($user->hasAllRoles('super-admin', 'editor'));
+    }
+
+    #[Test]
+    public function super_admin_still_passes_every_permission_check()
+    {
+        KeystoneRole::create(['name' => 'super-admin']);
+        $user = User::factory()->create();
+        $user->assignRole('super-admin');
+
+        $this->assertTrue($user->hasPermissionTo('anything'));
+        $this->assertTrue($user->hasAnyPermission('anything', 'else'));
+        $this->assertTrue($user->hasAllPermissions('anything', 'else'));
+        $this->assertTrue($user->hasDirectPermission('anything'));
+    }
 }

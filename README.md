@@ -188,8 +188,11 @@ class AdminController extends Controller
         // Get all roles
         $roles = $this->roleService->getAllWithPermissions();
 
-        // Assign roles to user
+        // Add roles to user (keeps existing roles)
         $this->authService->assignRolesToUser($user, ['admin', 'editor']);
+
+        // Or replace the user's roles with exactly this set
+        $this->authService->syncRolesForUser($user, ['editor']);
 
         // Check if user has role
         if ($this->authService->userHasRole($user, 'admin')) {
@@ -294,6 +297,11 @@ if (auth()->user()->isSuperAdmin()) {
 }
 ```
 
+> **Super-admins and role checks:** super-admins pass every *permission* check (`hasPermissionTo()`,
+> `can()`, the `permission:` middleware) and the `role:` middleware, but `hasRole()` /
+> `hasAnyRole()` / `hasAllRoles()` are literal. A super-admin only "has" the roles actually
+> assigned to them. Use `isSuperAdmin()` or a permission check when you mean "may do anything".
+
 > **Note:** `can()` and Laravel's `Gate` rely on Keystone registering permissions in `KeystoneServiceProvider::registerPermissionsWithGate()`, which is skipped when running in the console (e.g. `php artisan tinker`) to avoid registration during install/migration — it still runs normally during HTTP requests and the test suite. If you're debugging permissions in `tinker` and `can()` always returns `false`, this is why; use `hasPermissionTo()` / `hasRole()` directly instead, which don't depend on Gate registration.
 
 #### Service Layer Approach (Recommended for Controllers)
@@ -327,7 +335,7 @@ curl -X GET http://localhost/api/roles \
   -H "Accept: application/json"
 ```
 
-**Assign Role to User:**
+**Add a Role to a User** (keeps the user's other roles):
 
 ```bash
 curl -X POST http://localhost/api/users/1/roles \
@@ -335,6 +343,18 @@ curl -X POST http://localhost/api/users/1/roles \
   -H "Content-Type: application/json" \
   -d '{"roles": ["admin"]}'
 ```
+
+**Replace a User's Roles** (`PUT`; send `[]` to remove all):
+
+```bash
+curl -X PUT http://localhost/api/users/1/roles \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"roles": ["editor"]}'
+```
+
+The same `POST` adds / `PUT` replaces pattern applies to `/api/users/{user}/permissions` and
+`/api/roles/{role}/permissions`.
 
 ## Architecture
 
@@ -347,7 +367,7 @@ All role and permission operations go through dedicated services:
 - **PermissionService** - Permission CRUD and queries
   - `getAllWithRoles()`, `create()`, `delete()`, `syncToUser()`
 - **AuthorizationService** - High-level authorization operations
-  - `assignRolesToUser()`, `assignPermissionsToUser()`, `userHasRole()`, `userHasPermission()`
+  - `assignRolesToUser()`, `assignPermissionsToUser()` (add), `syncRolesForUser()`, `syncPermissionsForUser()` (replace), `userHasRole()`, `userHasPermission()`
 
 All services are registered in Laravel's service container with interface bindings and
 convenient aliases:
@@ -421,6 +441,19 @@ $manager = KeystoneRole::create([
     'title' => 'Department Manager',
     // tenant_id automatically set from auth()->user()->tenant_id
 ]);
+```
+
+#### Tenant Query Scopes
+
+Both `KeystoneRole` and `KeystonePermission` provide the same scopes. The automatic tenant
+scope always applies, so a tenant user already sees their tenant's rows plus global rows. These
+scopes narrow that further. They never widen it.
+
+```php
+KeystoneRole::global()->get();                            // global only (tenant_id = NULL)
+KeystoneRole::tenantSpecific()->get();                    // tenant-owned only (tenant_id NOT NULL)
+KeystoneRole::forTenant($tenantId)->get();                // that tenant's rows only — no globals
+KeystoneRole::withoutTenant()->forTenant($otherId)->get(); // explicit cross-tenant read
 ```
 
 #### Super-Admin Operations

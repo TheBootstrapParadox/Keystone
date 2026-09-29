@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Models;
 
+use BSPDX\Keystone\Services\PermissionRegistrar;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -87,6 +88,10 @@ class KeystonePermission extends Model
             }
         });
 
+        // Keep the registrar's cached permission list in sync with the table
+        static::saved(fn () => app(PermissionRegistrar::class)->forgetCachedPermissions());
+        static::deleted(fn () => app(PermissionRegistrar::class)->forgetCachedPermissions());
+
         // Auto-set tenant_id and guard_name when creating permissions
         static::creating(function ($permission) {
             // Set guard_name if not provided
@@ -133,7 +138,6 @@ class KeystonePermission extends Model
         $roleModels = $this->convertToRoleModels($roles);
 
         $this->roles()->syncWithoutDetaching($roleModels->pluck('id'));
-        $this->forgetCachedPermissions();
 
         return $this;
     }
@@ -149,7 +153,6 @@ class KeystonePermission extends Model
         $roleModels = $this->convertToRoleModels($roles);
 
         $this->roles()->sync($roleModels->pluck('id'));
-        $this->forgetCachedPermissions();
 
         return $this;
     }
@@ -165,7 +168,6 @@ class KeystonePermission extends Model
         $roleModels = $this->convertToRoleModels($roles);
 
         $this->roles()->detach($roleModels->pluck('id'));
-        $this->forgetCachedPermissions();
 
         return $this;
     }
@@ -243,15 +245,6 @@ class KeystonePermission extends Model
     }
 
     /**
-     * Clear cached permissions for all users with this permission.
-     */
-    protected function forgetCachedPermissions(): void
-    {
-        // TODO: Implement cache clearing when caching layer is added
-        // For now, this is a placeholder for future caching implementation
-    }
-
-    /**
      * Check if this is a global permission (accessible across all tenants).
      */
     public function isGlobal(): bool
@@ -307,17 +300,14 @@ class KeystonePermission extends Model
     }
 
     /**
-     * Scope a query to return permissions for a specific tenant.
-     * Includes both global and tenant-specific permissions.
+     * Scope a query to permissions belonging to a specific tenant only.
+     * Global permissions (tenant_id = NULL) are excluded; use global() for those.
+     * Respects the tenant global scope — chain after withoutTenant() for cross-tenant reads.
      *
      * @param  string|int  $tenantId
      */
     public function scopeForTenant(Builder $query, $tenantId): Builder
     {
-        return $query->withoutGlobalScope('tenant')
-            ->where(function ($q) use ($tenantId) {
-                $q->where('tenant_id', $tenantId)
-                    ->orWhereNull('tenant_id');
-            });
+        return $query->where($query->getModel()->getTable().'.tenant_id', $tenantId);
     }
 }

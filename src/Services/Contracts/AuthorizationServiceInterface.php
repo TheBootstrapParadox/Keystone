@@ -7,14 +7,24 @@ use Illuminate\Contracts\Auth\Authenticatable;
 interface AuthorizationServiceInterface
 {
     /**
-     * Assign roles to a user.
+     * Add roles to a user, keeping the roles they already hold.
      */
     public function assignRolesToUser(Authenticatable $user, array $roles): void;
 
     /**
-     * Assign permissions directly to a user.
+     * Add direct permissions to a user, keeping the ones they already hold.
      */
     public function assignPermissionsToUser(Authenticatable $user, array $permissions): void;
+
+    /**
+     * Replace a user's roles with exactly the given set (empty clears them).
+     */
+    public function syncRolesForUser(Authenticatable $user, array $roles): void;
+
+    /**
+     * Replace a user's direct permissions with exactly the given set (empty clears them).
+     */
+    public function syncPermissionsForUser(Authenticatable $user, array $permissions): void;
 
     /**
      * Check if user has a role.

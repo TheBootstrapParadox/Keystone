@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Http\Controllers;
 
+use App\Models\User;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
@@ -108,10 +109,12 @@ class RolePermissionController
     }
 
     /**
-     * Assign roles to a user.
+     * Add roles to a user, keeping the roles they already hold.
      */
-    public function assignRoles(Request $request, Authenticatable $user): JsonResponse
+    public function assignRoles(Request $request, string $user): JsonResponse
     {
+        $user = $this->resolveUser($user);
+
         $validated = $request->validate([
             'roles' => ['required', 'array'],
             'roles.*' => ['string', 'exists:roles,name'],
@@ -130,10 +133,36 @@ class RolePermissionController
     }
 
     /**
-     * Assign permissions to a user.
+     * Replace a user's roles with exactly the given set.
      */
-    public function assignPermissions(Request $request, Authenticatable $user): JsonResponse
+    public function syncRoles(Request $request, string $user): JsonResponse
     {
+        $user = $this->resolveUser($user);
+
+        $validated = $request->validate([
+            'roles' => ['present', 'array'],
+            'roles.*' => ['string', 'exists:roles,name'],
+        ]);
+
+        $this->authorizationService->syncRolesForUser($user, $validated['roles']);
+
+        return response()->json([
+            'message' => 'Roles synced successfully.',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'roles' => $user->roles->pluck('name'),
+            ],
+        ]);
+    }
+
+    /**
+     * Add direct permissions to a user, keeping the ones they already hold.
+     */
+    public function assignPermissions(Request $request, string $user): JsonResponse
+    {
+        $user = $this->resolveUser($user);
+
         $validated = $request->validate([
             'permissions' => ['required', 'array'],
             'permissions.*' => ['string', 'exists:permissions,name'],
@@ -152,7 +181,31 @@ class RolePermissionController
     }
 
     /**
-     * Assign permissions to a role.
+     * Replace a user's direct permissions with exactly the given set.
+     */
+    public function syncPermissions(Request $request, string $user): JsonResponse
+    {
+        $user = $this->resolveUser($user);
+
+        $validated = $request->validate([
+            'permissions' => ['present', 'array'],
+            'permissions.*' => ['string', 'exists:permissions,name'],
+        ]);
+
+        $this->authorizationService->syncPermissionsForUser($user, $validated['permissions']);
+
+        return response()->json([
+            'message' => 'Permissions synced successfully.',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'permissions' => $this->permissionService->getAllUserPermissions($user)->pluck('name'),
+            ],
+        ]);
+    }
+
+    /**
+     * Add permissions to a role, keeping the ones it already holds.
      */
     public function assignPermissionsToRole(Request $request, KeystoneRole $role): JsonResponse
     {
@@ -161,10 +214,28 @@ class RolePermissionController
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
-        $role = $this->roleService->syncPermissions($role, $validated['permissions']);
+        $this->permissionService->assignToRole($role, $validated['permissions']);
 
         return response()->json([
             'message' => 'Permissions assigned to role successfully.',
+            'role' => $role->load('permissions'),
+        ]);
+    }
+
+    /**
+     * Replace a role's permissions with exactly the given set.
+     */
+    public function syncRolePermissions(Request $request, KeystoneRole $role): JsonResponse
+    {
+        $validated = $request->validate([
+            'permissions' => ['present', 'array'],
+            'permissions.*' => ['string', 'exists:permissions,name'],
+        ]);
+
+        $role = $this->roleService->syncPermissions($role, $validated['permissions']);
+
+        return response()->json([
+            'message' => 'Role permissions synced successfully.',
             'role' => $role,
         ]);
     }
@@ -172,8 +243,10 @@ class RolePermissionController
     /**
      * Get user's roles and permissions.
      */
-    public function userRolesPermissions(Authenticatable $user): JsonResponse
+    public function userRolesPermissions(string $user): JsonResponse
     {
+        $user = $this->resolveUser($user);
+
         return response()->json([
             'user' => [
                 'id' => $user->id,
@@ -220,5 +293,30 @@ class RolePermissionController
         return response()->json([
             'message' => 'Permission deleted successfully.',
         ]);
+    }
+
+    /**
+     * Resolve the {user} route segment to the configured user model.
+     *
+     * Resolved here rather than via a global Route::bind('user') so the
+     * consuming app's own {user} bindings are left alone. Users in another
+     * tenant are reported as missing (404) rather than forbidden.
+     */
+    private function resolveUser(string $id): Authenticatable
+    {
+        $userModel = config('keystone.user.model')
+            ?? config('auth.providers.users.model', User::class);
+
+        $user = $userModel::findOrFail($id);
+
+        $callerTenant = auth()->user()?->tenant_id;
+
+        if (config('keystone.features.multi_tenant', false)
+            && $callerTenant !== null
+            && $user->tenant_id !== $callerTenant) {
+            abort(404);
+        }
+
+        return $user;
     }
 }

@@ -7,7 +7,6 @@ use BSPDX\Keystone\Models\KeystoneRole;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 trait HasKeystone
@@ -105,7 +104,6 @@ trait HasKeystone
         }
 
         $this->roles()->syncWithoutDetaching($pivotData);
-        $this->forgetCachedPermissions();
         $this->unsetRelation('roles'); // Force reload of roles relationship
 
         return $this;
@@ -130,7 +128,6 @@ trait HasKeystone
 
         $query->delete();
 
-        $this->forgetCachedPermissions();
         $this->unsetRelation('roles'); // Force reload of roles relationship
 
         return $this;
@@ -186,7 +183,6 @@ trait HasKeystone
         }
 
         $this->permissions()->syncWithoutDetaching($pivotData);
-        $this->forgetCachedPermissions();
         $this->unsetRelation('permissions'); // Force reload of permissions relationship
 
         return $this;
@@ -210,7 +206,6 @@ trait HasKeystone
 
         $query->delete();
 
-        $this->forgetCachedPermissions();
         $this->unsetRelation('permissions'); // Force reload of permissions relationship
 
         return $this;
@@ -247,14 +242,14 @@ trait HasKeystone
     // ============================================
 
     /**
-     * Check if user has a specific role
+     * Check if user has a specific role.
+     *
+     * Role checks are literal: super-admins only "have" roles they actually hold.
+     * The super-admin bypass applies to permission checks, the Gate, the
+     * role/permission middleware, and AuthorizationService — not here.
      */
     public function hasRole($roles, string $guard = 'web'): bool
     {
-        if ($this->isSuperAdmin()) {
-            return true;
-        }
-
         if (is_string($roles)) {
             return $this->roles
                 ->where('guard_name', $guard)
@@ -442,14 +437,6 @@ trait HasKeystone
 
             return KeystonePermission::where('name', $permission)->firstOrFail();
         });
-    }
-
-    /**
-     * Clear cached permissions for this user
-     */
-    protected function forgetCachedPermissions(): void
-    {
-        Cache::forget("user_permissions_{$this->id}");
     }
 
     // ============================================

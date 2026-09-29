@@ -9,6 +9,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Collection;
 
+/**
+ * KeystoneRole Model
+ *
+ * Represents a role in the multi-tenant RBAC system.
+ * Supports both global roles (tenant_id = NULL) and tenant-specific roles.
+ *
+ * @method static Builder withoutTenant()
+ * @method static Builder global()
+ * @method static Builder tenantSpecific()
+ * @method static Builder forTenant($tenantId)
+ */
 class KeystoneRole extends Model
 {
     /**
@@ -253,10 +264,14 @@ class KeystoneRole extends Model
     }
 
     /**
-     * Scope a query to a specific tenant.
+     * Scope a query to roles belonging to a specific tenant only.
+     * Global roles (tenant_id = NULL) are excluded; use global() for those.
+     * Respects the tenant global scope — chain after withoutTenant() for cross-tenant reads.
+     *
+     * @param  string|int  $tenantId
      */
     public function scopeForTenant(Builder $query, $tenantId): Builder
     {
-        return $query->where('tenant_id', $tenantId);
+        return $query->where($query->getModel()->getTable().'.tenant_id', $tenantId);
     }
 }
