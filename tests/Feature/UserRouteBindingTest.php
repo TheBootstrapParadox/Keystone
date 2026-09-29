@@ -6,6 +6,7 @@ use App\Models\User;
 use BSPDX\Keystone\Http\Controllers\RolePermissionController;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -117,6 +118,28 @@ class UserRouteBindingTest extends TestCase
             ->assertOk();
 
         $this->assertTrue($target->fresh()->hasRole('editor'));
+    }
+
+    #[Test]
+    public function tenantless_caller_assigns_the_target_tenants_role_by_name()
+    {
+        $this->requireTenantSchema();
+        config(['keystone.features.multi_tenant' => true]);
+        $tenantA = (string) Str::uuid();
+        $tenantB = (string) Str::uuid();
+        KeystoneRole::withoutTenant()->create(['name' => 'manager', 'tenant_id' => $tenantA]);
+        $roleB = KeystoneRole::withoutTenant()->create(['name' => 'manager', 'tenant_id' => $tenantB]);
+        $caller = User::factory()->create(['tenant_id' => null]);
+        $target = User::factory()->create(['tenant_id' => $tenantB]);
+
+        $this->actingAs($caller)
+            ->postJson("/users/{$target->id}/roles", ['roles' => ['manager']])
+            ->assertOk();
+
+        $this->assertSame(
+            [$roleB->id],
+            DB::table('model_has_roles')->where('model_id', $target->id)->pluck('role_id')->all()
+        );
     }
 
     /**

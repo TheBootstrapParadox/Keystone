@@ -3,6 +3,7 @@
 namespace BSPDX\Keystone\Models;
 
 use App\Models\User;
+use BSPDX\Keystone\Models\Concerns\ResolvesByNameForTenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -22,6 +23,8 @@ use Illuminate\Support\Collection;
  */
 class KeystoneRole extends Model
 {
+    use ResolvesByNameForTenant;
+
     /**
      * The table associated with the model.
      */
@@ -126,13 +129,7 @@ class KeystoneRole extends Model
      */
     public function givePermissionTo(...$permissions): self
     {
-        $permissionModels = collect($permissions)->flatten()->map(function ($permission) {
-            if ($permission instanceof KeystonePermission) {
-                return $permission;
-            }
-
-            return KeystonePermission::where('name', $permission)->firstOrFail();
-        });
+        $permissionModels = $this->convertToPermissionModels($permissions);
 
         $this->permissions()->syncWithoutDetaching($permissionModels->pluck('id'));
         $this->unsetRelation('permissions'); // Force reload of permissions relationship
@@ -145,13 +142,7 @@ class KeystoneRole extends Model
      */
     public function syncPermissions(...$permissions): self
     {
-        $permissionModels = collect($permissions)->flatten()->map(function ($permission) {
-            if ($permission instanceof KeystonePermission) {
-                return $permission;
-            }
-
-            return KeystonePermission::where('name', $permission)->firstOrFail();
-        });
+        $permissionModels = $this->convertToPermissionModels($permissions);
 
         $this->permissions()->sync($permissionModels->pluck('id'));
 
@@ -163,9 +154,7 @@ class KeystoneRole extends Model
      */
     public function revokePermissionTo($permission): self
     {
-        $permissionModel = $permission instanceof KeystonePermission
-            ? $permission
-            : KeystonePermission::where('name', $permission)->firstOrFail();
+        $permissionModel = $this->convertToPermissionModels([$permission])->first();
 
         $this->permissions()->detach($permissionModel->id);
 
@@ -211,6 +200,16 @@ class KeystoneRole extends Model
     // ============================================
     // HELPER METHODS
     // ============================================
+
+    /**
+     * Convert permission names or models to models, resolving names in this role's tenant.
+     */
+    protected function convertToPermissionModels(array $permissions): Collection
+    {
+        return collect($permissions)->flatten()->map(fn ($permission) => $permission instanceof KeystonePermission
+            ? $permission
+            : KeystonePermission::findByNameForTenant($permission, $this->keystoneTenantId()));
+    }
 
     /**
      * Determine if this role is the super admin role.

@@ -302,6 +302,29 @@ KeystonePermission::withoutTenant()
     ->get();
 ```
 
+### Name Resolution
+
+When you pass a role or permission **name** (rather than a model) to an assignment method, Keystone looks it up in the tenant of whatever is *receiving* it, not in the logged-in caller's scope:
+
+| Call | Name is resolved in |
+|---|---|
+| `$user->assignRole('manager')`, `removeRole`, `syncRoles`, `givePermissionTo`, `revokePermissionTo`, `syncPermissions` | the user's tenant |
+| `$role->givePermissionTo('edit')`, `syncPermissions`, `revokePermissionTo` | the role's tenant |
+| `$permission->assignRole('manager')`, `syncRoles`, `removeRole` | the permission's tenant |
+
+Rules:
+
+- The tenant's own row wins over a global row with the same name.
+- If the receiver has no tenant, only global rows match.
+- If nothing matches, a `ModelNotFoundException` is thrown and nothing changes.
+- Model instances are always used exactly as given.
+
+This means a global admin, console command, or queued job assigning `manager` to a tenant B user always gets tenant B's `manager`, even when other tenants have one too. You can use the same lookup directly:
+
+```php
+$role = KeystoneRole::findByNameForTenant('manager', $tenantId);
+```
+
 ### Auto-Population on Creation
 
 When creating roles or permissions, the `tenant_id` is automatically populated from the authenticated user:

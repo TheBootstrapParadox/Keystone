@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Models;
 
+use BSPDX\Keystone\Models\Concerns\ResolvesByNameForTenant;
 use BSPDX\Keystone\Services\PermissionRegistrar;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,6 +32,8 @@ use Illuminate\Support\Collection;
  */
 class KeystonePermission extends Model
 {
+    use ResolvesByNameForTenant;
+
     /**
      * The table associated with the model.
      *
@@ -226,6 +229,7 @@ class KeystonePermission extends Model
 
     /**
      * Convert various role representations to KeystoneRole models.
+     * Names are resolved in this permission's tenant.
      */
     protected function convertToRoleModels(array $roles): Collection
     {
@@ -235,7 +239,7 @@ class KeystonePermission extends Model
             }
 
             if (is_string($role)) {
-                return KeystoneRole::where('name', $role)->firstOrFail();
+                return KeystoneRole::findByNameForTenant($role, $this->keystoneTenantId());
             }
 
             if (is_int($role)) {

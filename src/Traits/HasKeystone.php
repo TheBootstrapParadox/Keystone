@@ -416,31 +416,31 @@ trait HasKeystone
     // ============================================
 
     /**
-     * Convert mixed role input to KeystoneRole models
+     * Convert mixed role input to KeystoneRole models, resolving names in this user's tenant
      */
     protected function convertToRoleModels($roles): Collection
     {
-        return collect($roles)->flatten()->map(function ($role) {
-            if ($role instanceof KeystoneRole) {
-                return $role;
-            }
-
-            return KeystoneRole::where('name', $role)->firstOrFail();
-        });
+        return collect($roles)->flatten()->map(fn ($role) => $role instanceof KeystoneRole
+            ? $role
+            : KeystoneRole::findByNameForTenant($role, $this->keystoneUserTenantId()));
     }
 
     /**
-     * Convert mixed permission input to KeystonePermission models
+     * Convert mixed permission input to KeystonePermission models, resolving names in this user's tenant
      */
     protected function convertToPermissionModels($permissions): Collection
     {
-        return collect($permissions)->flatten()->map(function ($permission) {
-            if ($permission instanceof KeystonePermission) {
-                return $permission;
-            }
+        return collect($permissions)->flatten()->map(fn ($permission) => $permission instanceof KeystonePermission
+            ? $permission
+            : KeystonePermission::findByNameForTenant($permission, $this->keystoneUserTenantId()));
+    }
 
-            return KeystonePermission::where('name', $permission)->firstOrFail();
-        });
+    /**
+     * The user's tenant for name resolution (null when multi-tenancy is off).
+     */
+    protected function keystoneUserTenantId(): ?string
+    {
+        return config('keystone.features.multi_tenant', false) ? $this->tenant_id : null;
     }
 
     // ============================================
