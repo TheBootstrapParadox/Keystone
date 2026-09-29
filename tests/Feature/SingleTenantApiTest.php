@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use BSPDX\Keystone\Http\Controllers\RolePermissionController;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
+use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -56,5 +58,37 @@ class SingleTenantApiTest extends TestCase
 
         $user->syncRoles('editor');
         $this->assertTrue($user->hasRole('editor'));
+    }
+
+    #[Test]
+    public function user_route_assigns_to_the_user_in_the_url()
+    {
+        Route::middleware(['web'])->post('/users/{user}/roles', [RolePermissionController::class, 'assignRoles']);
+        KeystoneRole::create(['name' => 'editor']);
+        [$caller, $target] = User::factory()->count(2)->create();
+
+        $this->actingAs($caller)
+            ->postJson("/users/{$target->id}/roles", ['roles' => ['editor']])
+            ->assertOk();
+
+        $this->assertTrue($target->fresh()->hasRole('editor'));
+        $this->assertFalse($caller->fresh()->hasRole('editor'));
+    }
+
+    #[Test]
+    public function post_adds_and_put_replaces_user_roles_without_tenant_columns()
+    {
+        Route::middleware(['web'])->post('/users/{user}/roles', [RolePermissionController::class, 'assignRoles']);
+        Route::middleware(['web'])->put('/users/{user}/roles', [RolePermissionController::class, 'syncRoles']);
+        KeystoneRole::create(['name' => 'editor']);
+        KeystoneRole::create(['name' => 'admin']);
+        [$caller, $target] = User::factory()->count(2)->create();
+        $target->assignRole('editor');
+
+        $this->actingAs($caller)->postJson("/users/{$target->id}/roles", ['roles' => ['admin']])->assertOk();
+        $this->assertEqualsCanonicalizing(['editor', 'admin'], $target->fresh()->roles->pluck('name')->all());
+
+        $this->actingAs($caller)->putJson("/users/{$target->id}/roles", ['roles' => ['admin']])->assertOk();
+        $this->assertSame(['admin'], $target->fresh()->roles->pluck('name')->all());
     }
 }

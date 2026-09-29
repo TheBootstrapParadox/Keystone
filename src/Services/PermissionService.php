@@ -50,7 +50,7 @@ class PermissionService implements PermissionServiceInterface
      */
     public function getUserPermissions(Authenticatable $user): Collection
     {
-        return $user->permissions;
+        return $user->permissions()->get();
     }
 
     /**

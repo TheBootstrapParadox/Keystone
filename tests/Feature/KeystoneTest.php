@@ -6,6 +6,8 @@ use App\Models\User;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -24,6 +26,20 @@ class KeystoneTest extends TestCase
             ->get('/test-admin-route', function () {
                 return response()->json(['message' => 'Success']);
             });
+
+        // Routes without `auth` in front, so Keystone's own guest handling is reached
+        Route::middleware(['web', 'role:admin'])
+            ->get('/test-guest-role-route', fn () => response()->json(['message' => 'Success']));
+        Route::middleware(['web', 'permission:edit-posts'])
+            ->get('/test-guest-permission-route', fn () => response()->json(['message' => 'Success']));
+    }
+
+    protected function tearDown(): void
+    {
+        // Reset the static guest-redirect callback so it can't leak between tests
+        AuthenticationException::redirectUsing(fn () => null);
+
+        parent::tearDown();
     }
 
     #[Test]
@@ -124,5 +140,57 @@ class KeystoneTest extends TestCase
 
         // Super admin should bypass permission checks
         $this->assertTrue($user->canBypassPermissions());
+    }
+
+    #[Test]
+    public function json_guest_gets_401_from_role_and_permission_middleware()
+    {
+        // No route named `login` exists in the test app, so this also proves
+        // the middleware no longer depends on one.
+        $this->getJson('/test-guest-role-route')->assertStatus(401);
+        $this->getJson('/test-guest-permission-route')->assertStatus(401);
+    }
+
+    #[Test]
+    public function browser_guest_is_redirected_to_the_login_route_when_one_exists()
+    {
+        Route::get('/login', fn () => 'login')->name('login');
+        Route::getRoutes()->refreshNameLookups();
+
+        $this->get('/test-guest-role-route')->assertRedirect('/login');
+        $this->get('/test-guest-permission-route')->assertRedirect('/login');
+    }
+
+    #[Test]
+    public function browser_guest_follows_the_apps_configured_guest_redirect()
+    {
+        // Resolve the kernel first: Laravel installs its default login redirect
+        // when the kernel is resolved, which would overwrite ours. Real apps set
+        // this via redirectGuestsTo() in bootstrap/app.php, which runs after it.
+        $this->app->make(HttpKernel::class);
+        AuthenticationException::redirectUsing(fn () => '/sign-in');
+
+        $this->get('/test-guest-role-route')->assertRedirect('/sign-in');
+        $this->get('/test-guest-permission-route')->assertRedirect('/sign-in');
+    }
+
+    #[Test]
+    public function super_admin_passes_role_middleware_without_holding_the_role()
+    {
+        KeystoneRole::create(['name' => 'super-admin']);
+        KeystoneRole::create(['name' => 'admin']);
+        $superAdmin = User::factory()->create();
+        $superAdmin->assignRole('super-admin');
+
+        $this->actingAs($superAdmin)->getJson('/test-admin-route')->assertOk();
+    }
+
+    #[Test]
+    public function regular_user_without_the_role_is_forbidden_by_role_middleware()
+    {
+        KeystoneRole::create(['name' => 'admin']);
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->getJson('/test-admin-route')->assertForbidden();
     }
 }

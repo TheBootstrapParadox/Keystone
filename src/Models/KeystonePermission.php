@@ -2,6 +2,8 @@
 
 namespace BSPDX\Keystone\Models;
 
+use BSPDX\Keystone\Models\Concerns\ResolvesByNameForTenant;
+use BSPDX\Keystone\Services\PermissionRegistrar;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -30,6 +32,8 @@ use Illuminate\Support\Collection;
  */
 class KeystonePermission extends Model
 {
+    use ResolvesByNameForTenant;
+
     /**
      * The table associated with the model.
      *
@@ -40,7 +44,7 @@ class KeystonePermission extends Model
     /**
      * The attributes that are mass assignable.
      *
-     * @var array<int, string>
+     * @var list<string>
      */
     protected $fillable = [
         'name',
@@ -87,6 +91,10 @@ class KeystonePermission extends Model
             }
         });
 
+        // Keep the registrar's cached permission list in sync with the table
+        static::saved(fn (self $permission) => $permission->forgetCachedPermissions());
+        static::deleted(fn (self $permission) => $permission->forgetCachedPermissions());
+
         // Auto-set tenant_id and guard_name when creating permissions
         static::creating(function ($permission) {
             // Set guard_name if not provided
@@ -107,6 +115,8 @@ class KeystonePermission extends Model
 
     /**
      * Get the roles that have this permission.
+     *
+     * @return BelongsToMany<KeystoneRole, $this>
      */
     public function roles(): BelongsToMany
     {
@@ -133,7 +143,6 @@ class KeystonePermission extends Model
         $roleModels = $this->convertToRoleModels($roles);
 
         $this->roles()->syncWithoutDetaching($roleModels->pluck('id'));
-        $this->forgetCachedPermissions();
 
         return $this;
     }
@@ -149,7 +158,6 @@ class KeystonePermission extends Model
         $roleModels = $this->convertToRoleModels($roles);
 
         $this->roles()->sync($roleModels->pluck('id'));
-        $this->forgetCachedPermissions();
 
         return $this;
     }
@@ -165,7 +173,6 @@ class KeystonePermission extends Model
         $roleModels = $this->convertToRoleModels($roles);
 
         $this->roles()->detach($roleModels->pluck('id'));
-        $this->forgetCachedPermissions();
 
         return $this;
     }
@@ -222,6 +229,7 @@ class KeystonePermission extends Model
 
     /**
      * Convert various role representations to KeystoneRole models.
+     * Names are resolved in this permission's tenant.
      */
     protected function convertToRoleModels(array $roles): Collection
     {
@@ -231,7 +239,7 @@ class KeystonePermission extends Model
             }
 
             if (is_string($role)) {
-                return KeystoneRole::where('name', $role)->firstOrFail();
+                return KeystoneRole::findByNameForTenant($role, $this->keystoneTenantId());
             }
 
             if (is_int($role)) {
@@ -243,12 +251,24 @@ class KeystonePermission extends Model
     }
 
     /**
-     * Clear cached permissions for all users with this permission.
+     * Invalidate the registrar's cached permission list.
+     *
+     * Cleared now so reads later in the same transaction see this change, and
+     * again once the transaction settles: on commit, in case another request
+     * refilled the cache from pre-commit rows; on rollback, in case this
+     * transaction refilled it with rows that no longer exist.
      */
     protected function forgetCachedPermissions(): void
     {
-        // TODO: Implement cache clearing when caching layer is added
-        // For now, this is a placeholder for future caching implementation
+        $forget = fn () => app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $forget();
+
+        $connection = $this->getConnection();
+        if ($connection->transactionLevel() > 0) {
+            $connection->afterCommit($forget);
+            $connection->afterRollBack($forget);
+        }
     }
 
     /**
@@ -307,17 +327,14 @@ class KeystonePermission extends Model
     }
 
     /**
-     * Scope a query to return permissions for a specific tenant.
-     * Includes both global and tenant-specific permissions.
+     * Scope a query to permissions belonging to a specific tenant only.
+     * Global permissions (tenant_id = NULL) are excluded; use global() for those.
+     * Respects the tenant global scope — chain after withoutTenant() for cross-tenant reads.
      *
      * @param  string|int  $tenantId
      */
     public function scopeForTenant(Builder $query, $tenantId): Builder
     {
-        return $query->withoutGlobalScope('tenant')
-            ->where(function ($q) use ($tenantId) {
-                $q->where('tenant_id', $tenantId)
-                    ->orWhereNull('tenant_id');
-            });
+        return $query->where($query->getModel()->getTable().'.tenant_id', $tenantId);
     }
 }

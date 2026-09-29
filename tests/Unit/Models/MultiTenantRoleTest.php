@@ -7,6 +7,7 @@ use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -244,5 +245,64 @@ class MultiTenantRoleTest extends TestCase
 
         // Should use the explicitly provided tenant_id, not the authenticated user's
         $this->assertEquals($differentTenantId, $role->tenant_id);
+    }
+
+    #[Test]
+    public function for_tenant_returns_only_that_tenants_roles_without_globals()
+    {
+        $tenantA = (string) Str::uuid();
+        $tenantB = (string) Str::uuid();
+        $this->seedTenantScopedRoles($tenantA, $tenantB);
+
+        $names = KeystoneRole::forTenant($tenantA)->pluck('name')->all();
+
+        $this->assertEqualsCanonicalizing(['a-only'], $names);
+    }
+
+    #[Test]
+    public function for_tenant_respects_the_authenticated_users_tenant_scope()
+    {
+        $tenantA = (string) Str::uuid();
+        $tenantB = (string) Str::uuid();
+        $this->seedTenantScopedRoles($tenantA, $tenantB);
+
+        Auth::login(User::factory()->create(['tenant_id' => $tenantA]));
+
+        $this->assertEqualsCanonicalizing(['a-only'], KeystoneRole::forTenant($tenantA)->pluck('name')->all());
+        $this->assertCount(0, KeystoneRole::forTenant($tenantB)->get());
+    }
+
+    #[Test]
+    public function without_tenant_then_for_tenant_reads_another_tenant_explicitly()
+    {
+        $tenantA = (string) Str::uuid();
+        $tenantB = (string) Str::uuid();
+        $this->seedTenantScopedRoles($tenantA, $tenantB);
+
+        Auth::login(User::factory()->create(['tenant_id' => $tenantA]));
+
+        $names = KeystoneRole::withoutTenant()->forTenant($tenantB)->pluck('name')->all();
+
+        $this->assertEqualsCanonicalizing(['b-only'], $names);
+    }
+
+    #[Test]
+    public function global_scope_method_returns_only_global_roles()
+    {
+        $tenantA = (string) Str::uuid();
+        $tenantB = (string) Str::uuid();
+        $this->seedTenantScopedRoles($tenantA, $tenantB);
+
+        $this->assertEqualsCanonicalizing(['everyone'], KeystoneRole::global()->pluck('name')->all());
+    }
+
+    /**
+     * One role for tenant A, one for tenant B, and one global.
+     */
+    private function seedTenantScopedRoles(string $tenantA, string $tenantB): void
+    {
+        KeystoneRole::withoutTenant()->create(['name' => 'a-only', 'tenant_id' => $tenantA]);
+        KeystoneRole::withoutTenant()->create(['name' => 'b-only', 'tenant_id' => $tenantB]);
+        KeystoneRole::withoutTenant()->create(['name' => 'everyone', 'tenant_id' => null]);
     }
 }

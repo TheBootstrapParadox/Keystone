@@ -8,17 +8,33 @@ use Illuminate\Contracts\Auth\Authenticatable;
 class AuthorizationService implements AuthorizationServiceInterface
 {
     /**
-     * Assign roles to a user.
+     * Add roles to a user, keeping the roles they already hold.
      */
     public function assignRolesToUser(Authenticatable $user, array $roles): void
+    {
+        $user->assignRole($roles);
+    }
+
+    /**
+     * Add direct permissions to a user, keeping the ones they already hold.
+     */
+    public function assignPermissionsToUser(Authenticatable $user, array $permissions): void
+    {
+        $user->givePermissionTo($permissions);
+    }
+
+    /**
+     * Replace a user's roles with exactly the given set (empty clears them).
+     */
+    public function syncRolesForUser(Authenticatable $user, array $roles): void
     {
         $user->syncRoles($roles);
     }
 
     /**
-     * Assign permissions directly to a user.
+     * Replace a user's direct permissions with exactly the given set (empty clears them).
      */
-    public function assignPermissionsToUser(Authenticatable $user, array $permissions): void
+    public function syncPermissionsForUser(Authenticatable $user, array $permissions): void
     {
         $user->syncPermissions($permissions);
     }
@@ -28,6 +44,11 @@ class AuthorizationService implements AuthorizationServiceInterface
      */
     public function userHasRole(Authenticatable $user, string|array $roles): bool
     {
+        // Check for super admin bypass (the trait's role checks are literal)
+        if ($this->userCanBypassPermissions($user)) {
+            return true;
+        }
+
         return $user->hasAnyRole($roles);
     }
 
@@ -57,7 +78,6 @@ class AuthorizationService implements AuthorizationServiceInterface
             return true;
         }
 
-        // Delegate to Spatie's HasRoles trait
         return $user->hasAnyRole($roles);
     }
 
@@ -71,7 +91,6 @@ class AuthorizationService implements AuthorizationServiceInterface
             return true;
         }
 
-        // Delegate to Spatie's HasRoles trait
         return $user->hasAllRoles($roles);
     }
 
@@ -85,7 +104,6 @@ class AuthorizationService implements AuthorizationServiceInterface
             return true;
         }
 
-        // Delegate to Spatie's HasRoles trait
         return $user->hasAnyPermission($permissions);
     }
 
@@ -99,7 +117,6 @@ class AuthorizationService implements AuthorizationServiceInterface
             return true;
         }
 
-        // Delegate to Spatie's HasRoles trait
         return $user->hasAllPermissions($permissions);
     }
 
@@ -113,7 +130,6 @@ class AuthorizationService implements AuthorizationServiceInterface
             return true;
         }
 
-        // Delegate to Spatie's HasPermissions trait
         return $user->hasDirectPermission($permission);
     }
 }

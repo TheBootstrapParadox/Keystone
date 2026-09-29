@@ -71,7 +71,7 @@ class RoleService implements RoleServiceInterface
      */
     public function getUserRoles(Authenticatable $user): Collection
     {
-        return $user->roles;
+        return $user->roles()->get();
     }
 
     /**

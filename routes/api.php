@@ -46,22 +46,34 @@ Route::middleware(['auth'])->prefix('api')->group(function () {
         ->middleware('permission:delete-permissions')
         ->name('api.permissions.destroy');
 
-    // Assign roles and permissions to users
+    // Assign (POST adds) or sync (PUT replaces) roles and permissions for users
     Route::post('/users/{user}/roles', [RolePermissionController::class, 'assignRoles'])
         ->middleware('permission:assign-roles')
         ->name('api.users.roles.assign');
 
+    Route::put('/users/{user}/roles', [RolePermissionController::class, 'syncRoles'])
+        ->middleware('permission:assign-roles')
+        ->name('api.users.roles.sync');
+
     Route::post('/users/{user}/permissions', [RolePermissionController::class, 'assignPermissions'])
         ->middleware('permission:assign-permissions')
         ->name('api.users.permissions.assign');
+
+    Route::put('/users/{user}/permissions', [RolePermissionController::class, 'syncPermissions'])
+        ->middleware('permission:assign-permissions')
+        ->name('api.users.permissions.sync');
 
     // Get user roles and permissions
     Route::get('/users/{user}/roles-permissions', [RolePermissionController::class, 'userRolesPermissions'])
         ->middleware('permission:view-users')
         ->name('api.users.roles-permissions');
 
-    // Assign permissions to roles
+    // Assign (POST adds) or sync (PUT replaces) permissions for roles
     Route::post('/roles/{role}/permissions', [RolePermissionController::class, 'assignPermissionsToRole'])
         ->middleware('permission:assign-permissions')
         ->name('api.roles.permissions.assign');
+
+    Route::put('/roles/{role}/permissions', [RolePermissionController::class, 'syncRolePermissions'])
+        ->middleware('permission:assign-permissions')
+        ->name('api.roles.permissions.sync');
 });

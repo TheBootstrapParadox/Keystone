@@ -7,7 +7,6 @@ use BSPDX\Keystone\Models\KeystoneRole;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 trait HasKeystone
@@ -32,6 +31,8 @@ trait HasKeystone
 
     /**
      * User's roles relationship with tenant filtering
+     *
+     * @return MorphToMany<KeystoneRole, $this>
      */
     public function roles(): MorphToMany
     {
@@ -59,6 +60,8 @@ trait HasKeystone
 
     /**
      * User's direct permissions (not via roles)
+     *
+     * @return MorphToMany<KeystonePermission, $this>
      */
     public function permissions(): MorphToMany
     {
@@ -105,7 +108,6 @@ trait HasKeystone
         }
 
         $this->roles()->syncWithoutDetaching($pivotData);
-        $this->forgetCachedPermissions();
         $this->unsetRelation('roles'); // Force reload of roles relationship
 
         return $this;
@@ -130,7 +132,6 @@ trait HasKeystone
 
         $query->delete();
 
-        $this->forgetCachedPermissions();
         $this->unsetRelation('roles'); // Force reload of roles relationship
 
         return $this;
@@ -186,7 +187,6 @@ trait HasKeystone
         }
 
         $this->permissions()->syncWithoutDetaching($pivotData);
-        $this->forgetCachedPermissions();
         $this->unsetRelation('permissions'); // Force reload of permissions relationship
 
         return $this;
@@ -210,7 +210,6 @@ trait HasKeystone
 
         $query->delete();
 
-        $this->forgetCachedPermissions();
         $this->unsetRelation('permissions'); // Force reload of permissions relationship
 
         return $this;
@@ -247,14 +246,14 @@ trait HasKeystone
     // ============================================
 
     /**
-     * Check if user has a specific role
+     * Check if user has a specific role.
+     *
+     * Role checks are literal: super-admins only "have" roles they actually hold.
+     * The super-admin bypass applies to permission checks, the Gate, the
+     * role/permission middleware, and AuthorizationService — not here.
      */
     public function hasRole($roles, string $guard = 'web'): bool
     {
-        if ($this->isSuperAdmin()) {
-            return true;
-        }
-
         if (is_string($roles)) {
             return $this->roles
                 ->where('guard_name', $guard)
@@ -332,7 +331,7 @@ trait HasKeystone
 
         return $this->roles
             ->where('guard_name', $guard)
-            ->flatMap->permissions
+            ->flatMap(fn (KeystoneRole $role) => $role->permissions)
             ->where('guard_name', $guard)
             ->contains('name', $permissionName);
     }
@@ -344,7 +343,7 @@ trait HasKeystone
     {
         $permissions = $this->permissions;
 
-        $this->roles->each(function ($role) use (&$permissions) {
+        $this->roles->each(function (KeystoneRole $role) use (&$permissions) {
             $permissions = $permissions->merge($role->permissions);
         });
 
@@ -417,39 +416,31 @@ trait HasKeystone
     // ============================================
 
     /**
-     * Convert mixed role input to KeystoneRole models
+     * Convert mixed role input to KeystoneRole models, resolving names in this user's tenant
      */
     protected function convertToRoleModels($roles): Collection
     {
-        return collect($roles)->flatten()->map(function ($role) {
-            if ($role instanceof KeystoneRole) {
-                return $role;
-            }
-
-            return KeystoneRole::where('name', $role)->firstOrFail();
-        });
+        return collect($roles)->flatten()->map(fn ($role) => $role instanceof KeystoneRole
+            ? $role
+            : KeystoneRole::findByNameForTenant($role, $this->keystoneUserTenantId()));
     }
 
     /**
-     * Convert mixed permission input to KeystonePermission models
+     * Convert mixed permission input to KeystonePermission models, resolving names in this user's tenant
      */
     protected function convertToPermissionModels($permissions): Collection
     {
-        return collect($permissions)->flatten()->map(function ($permission) {
-            if ($permission instanceof KeystonePermission) {
-                return $permission;
-            }
-
-            return KeystonePermission::where('name', $permission)->firstOrFail();
-        });
+        return collect($permissions)->flatten()->map(fn ($permission) => $permission instanceof KeystonePermission
+            ? $permission
+            : KeystonePermission::findByNameForTenant($permission, $this->keystoneUserTenantId()));
     }
 
     /**
-     * Clear cached permissions for this user
+     * The user's tenant for name resolution (null when multi-tenancy is off).
      */
-    protected function forgetCachedPermissions(): void
+    protected function keystoneUserTenantId(): ?string
     {
-        Cache::forget("user_permissions_{$this->id}");
+        return config('keystone.features.multi_tenant', false) ? $this->tenant_id : null;
     }
 
     // ============================================

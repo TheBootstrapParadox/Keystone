@@ -275,6 +275,56 @@ This means:
 - You don't need to manually add `where('tenant_id', ...)` to every query
 - The filtering happens automatically at the model level
 
+### Tenant Query Scopes
+
+Both models share these scopes. Each one narrows the query and combines with the automatic tenant
+scope above; none of them removes it:
+
+| Scope | Returns |
+|---|---|
+| `global()` | Rows with `tenant_id = NULL` |
+| `tenantSpecific()` | Rows with a non-null `tenant_id` |
+| `forTenant($tenantId)` | Rows with `tenant_id = $tenantId` only. Global rows are **not** included |
+| `withoutTenant()` | Removes the automatic tenant scope (cross-tenant reads) |
+
+Because the automatic scope still applies, a tenant A user calling `forTenant($tenantB)` gets no
+rows. To read another tenant's roles or permissions, opt in explicitly:
+
+```php
+KeystonePermission::withoutTenant()->forTenant($tenantB)->get();
+```
+
+To get one tenant's rows **plus** globals for an arbitrary tenant:
+
+```php
+KeystonePermission::withoutTenant()
+    ->where(fn ($q) => $q->where('tenant_id', $tenantId)->orWhereNull('tenant_id'))
+    ->get();
+```
+
+### Name Resolution
+
+When you pass a role or permission **name** (rather than a model) to an assignment method, Keystone looks it up in the tenant of whatever is *receiving* it, not in the logged-in caller's scope:
+
+| Call | Name is resolved in |
+|---|---|
+| `$user->assignRole('manager')`, `removeRole`, `syncRoles`, `givePermissionTo`, `revokePermissionTo`, `syncPermissions` | the user's tenant |
+| `$role->givePermissionTo('edit')`, `syncPermissions`, `revokePermissionTo` | the role's tenant |
+| `$permission->assignRole('manager')`, `syncRoles`, `removeRole` | the permission's tenant |
+
+Rules:
+
+- The tenant's own row wins over a global row with the same name.
+- If the receiver has no tenant, only global rows match.
+- If nothing matches, a `ModelNotFoundException` is thrown and nothing changes.
+- Model instances are always used exactly as given.
+
+This means a global admin, console command, or queued job assigning `manager` to a tenant B user always gets tenant B's `manager`, even when other tenants have one too. You can use the same lookup directly:
+
+```php
+$role = KeystoneRole::findByNameForTenant('manager', $tenantId);
+```
+
 ### Auto-Population on Creation
 
 When creating roles or permissions, the `tenant_id` is automatically populated from the authenticated user:
@@ -362,6 +412,9 @@ if ($user->isSuperAdmin()) {
     // User sees only their tenant's roles
     $tenantRoles = KeystoneRole::all();
 }
+
+// Role checks are literal, even for super-admins:
+$user->hasRole('manager'); // true only if the user actually holds `manager`
 
 // Or use the method directly
 if ($user->canBypassPermissions()) {

@@ -4,6 +4,7 @@ namespace BSPDX\Keystone\Http\Middleware;
 
 use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 use Closure;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -30,7 +31,7 @@ class EnsureHasPermission
     public function handle(Request $request, Closure $next, string ...$permissions): Response
     {
         if (! $request->user()) {
-            return redirect()->route('login');
+            throw new AuthenticationException('Unauthenticated.');
         }
 
         // Super admins bypass all permission checks

@@ -3,14 +3,28 @@
 namespace BSPDX\Keystone\Models;
 
 use App\Models\User;
+use BSPDX\Keystone\Models\Concerns\ResolvesByNameForTenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Collection;
 
+/**
+ * KeystoneRole Model
+ *
+ * Represents a role in the multi-tenant RBAC system.
+ * Supports both global roles (tenant_id = NULL) and tenant-specific roles.
+ *
+ * @method static Builder withoutTenant()
+ * @method static Builder global()
+ * @method static Builder tenantSpecific()
+ * @method static Builder forTenant($tenantId)
+ */
 class KeystoneRole extends Model
 {
+    use ResolvesByNameForTenant;
+
     /**
      * The table associated with the model.
      */
@@ -73,6 +87,8 @@ class KeystoneRole extends Model
 
     /**
      * The permissions that belong to the role.
+     *
+     * @return BelongsToMany<KeystonePermission, $this>
      */
     public function permissions(): BelongsToMany
     {
@@ -113,13 +129,7 @@ class KeystoneRole extends Model
      */
     public function givePermissionTo(...$permissions): self
     {
-        $permissionModels = collect($permissions)->flatten()->map(function ($permission) {
-            if ($permission instanceof KeystonePermission) {
-                return $permission;
-            }
-
-            return KeystonePermission::where('name', $permission)->firstOrFail();
-        });
+        $permissionModels = $this->convertToPermissionModels($permissions);
 
         $this->permissions()->syncWithoutDetaching($permissionModels->pluck('id'));
         $this->unsetRelation('permissions'); // Force reload of permissions relationship
@@ -132,13 +142,7 @@ class KeystoneRole extends Model
      */
     public function syncPermissions(...$permissions): self
     {
-        $permissionModels = collect($permissions)->flatten()->map(function ($permission) {
-            if ($permission instanceof KeystonePermission) {
-                return $permission;
-            }
-
-            return KeystonePermission::where('name', $permission)->firstOrFail();
-        });
+        $permissionModels = $this->convertToPermissionModels($permissions);
 
         $this->permissions()->sync($permissionModels->pluck('id'));
 
@@ -150,9 +154,7 @@ class KeystoneRole extends Model
      */
     public function revokePermissionTo($permission): self
     {
-        $permissionModel = $permission instanceof KeystonePermission
-            ? $permission
-            : KeystonePermission::where('name', $permission)->firstOrFail();
+        $permissionModel = $this->convertToPermissionModels([$permission])->first();
 
         $this->permissions()->detach($permissionModel->id);
 
@@ -198,6 +200,16 @@ class KeystoneRole extends Model
     // ============================================
     // HELPER METHODS
     // ============================================
+
+    /**
+     * Convert permission names or models to models, resolving names in this role's tenant.
+     */
+    protected function convertToPermissionModels(array $permissions): Collection
+    {
+        return collect($permissions)->flatten()->map(fn ($permission) => $permission instanceof KeystonePermission
+            ? $permission
+            : KeystonePermission::findByNameForTenant($permission, $this->keystoneTenantId()));
+    }
 
     /**
      * Determine if this role is the super admin role.
@@ -253,10 +265,14 @@ class KeystoneRole extends Model
     }
 
     /**
-     * Scope a query to a specific tenant.
+     * Scope a query to roles belonging to a specific tenant only.
+     * Global roles (tenant_id = NULL) are excluded; use global() for those.
+     * Respects the tenant global scope — chain after withoutTenant() for cross-tenant reads.
+     *
+     * @param  string|int  $tenantId
      */
     public function scopeForTenant(Builder $query, $tenantId): Builder
     {
-        return $query->where('tenant_id', $tenantId);
+        return $query->where($query->getModel()->getTable().'.tenant_id', $tenantId);
     }
 }

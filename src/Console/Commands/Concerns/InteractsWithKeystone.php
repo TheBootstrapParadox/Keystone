@@ -29,7 +29,8 @@ trait InteractsWithKeystone
      */
     protected function resolveGuard(): ?string
     {
-        $guard = $this->option('guard');
+        // Not every command using this trait defines --guard
+        $guard = $this->hasOption('guard') ? $this->input->getOption('guard') : null;
 
         if ($guard && ! array_key_exists($guard, config('auth.guards'))) {
             $this->error("Guard [{$guard}] is not defined in your auth configuration.");

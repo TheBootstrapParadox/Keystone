@@ -185,7 +185,7 @@ class AssignPermissionCommand extends Command
      */
     protected function gatherPermissions(): array
     {
-        $permissions = $this->argument('permission') ?? [];
+        $permissions = $this->argument('permission');
 
         // From -P / --permission options (repeatable)
         if ($permissionOptions = $this->option('permission')) {

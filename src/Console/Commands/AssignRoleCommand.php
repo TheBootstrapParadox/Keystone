@@ -57,7 +57,7 @@ class AssignRoleCommand extends Command
                 $action = 'removed';
             } elseif ($this->option('sync')) {
                 // Replace all roles
-                $this->authorizationService->assignRolesToUser($user, $roles);
+                $this->authorizationService->syncRolesForUser($user, $roles);
                 $action = 'synced';
             } else {
                 // Add roles (default behavior)
@@ -97,7 +97,7 @@ class AssignRoleCommand extends Command
      */
     protected function gatherRoles(): array
     {
-        $roles = $this->argument('role') ?? [];
+        $roles = $this->argument('role');
 
         // From -R / --role options (repeatable)
         if ($roleOptions = $this->option('role')) {
