@@ -41,7 +41,7 @@ class KeystonePermission extends Model
     /**
      * The attributes that are mass assignable.
      *
-     * @var array<int, string>
+     * @var list<string>
      */
     protected $fillable = [
         'name',
@@ -112,6 +112,8 @@ class KeystonePermission extends Model
 
     /**
      * Get the roles that have this permission.
+     *
+     * @return BelongsToMany<KeystoneRole, $this>
      */
     public function roles(): BelongsToMany
     {

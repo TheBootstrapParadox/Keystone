@@ -7,6 +7,7 @@ use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -163,6 +164,10 @@ class KeystoneTest extends TestCase
     #[Test]
     public function browser_guest_follows_the_apps_configured_guest_redirect()
     {
+        // Resolve the kernel first: Laravel installs its default login redirect
+        // when the kernel is resolved, which would overwrite ours. Real apps set
+        // this via redirectGuestsTo() in bootstrap/app.php, which runs after it.
+        $this->app->make(HttpKernel::class);
         AuthenticationException::redirectUsing(fn () => '/sign-in');
 
         $this->get('/test-guest-role-route')->assertRedirect('/sign-in');

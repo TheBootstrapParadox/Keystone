@@ -9,6 +9,7 @@ use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
 use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -125,9 +126,9 @@ class RolePermissionController
         return response()->json([
             'message' => 'Roles assigned successfully.',
             'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'roles' => $user->roles->pluck('name'),
+                'id' => $user->getKey(),
+                'name' => $user->getAttribute('name'),
+                'roles' => $this->roleService->getUserRoles($user)->pluck('name'),
             ],
         ]);
     }
@@ -149,9 +150,9 @@ class RolePermissionController
         return response()->json([
             'message' => 'Roles synced successfully.',
             'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'roles' => $user->roles->pluck('name'),
+                'id' => $user->getKey(),
+                'name' => $user->getAttribute('name'),
+                'roles' => $this->roleService->getUserRoles($user)->pluck('name'),
             ],
         ]);
     }
@@ -173,8 +174,8 @@ class RolePermissionController
         return response()->json([
             'message' => 'Permissions assigned successfully.',
             'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
+                'id' => $user->getKey(),
+                'name' => $user->getAttribute('name'),
                 'permissions' => $this->permissionService->getAllUserPermissions($user)->pluck('name'),
             ],
         ]);
@@ -197,8 +198,8 @@ class RolePermissionController
         return response()->json([
             'message' => 'Permissions synced successfully.',
             'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
+                'id' => $user->getKey(),
+                'name' => $user->getAttribute('name'),
                 'permissions' => $this->permissionService->getAllUserPermissions($user)->pluck('name'),
             ],
         ]);
@@ -249,10 +250,10 @@ class RolePermissionController
 
         return response()->json([
             'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'roles' => $user->roles->map(fn ($role) => [
+                'id' => $user->getKey(),
+                'name' => $user->getAttribute('name'),
+                'email' => $user->getAttribute('email'),
+                'roles' => $this->roleService->getUserRoles($user)->map(fn ($role) => [
                     'id' => $role->id,
                     'name' => $role->name,
                 ]),
@@ -302,7 +303,7 @@ class RolePermissionController
      * consuming app's own {user} bindings are left alone. Users in another
      * tenant are reported as missing (404) rather than forbidden.
      */
-    private function resolveUser(string $id): Authenticatable
+    private function resolveUser(string $id): Model&Authenticatable
     {
         $userModel = config('keystone.user.model')
             ?? config('auth.providers.users.model', User::class);

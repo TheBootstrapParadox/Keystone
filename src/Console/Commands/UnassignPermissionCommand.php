@@ -109,7 +109,7 @@ class UnassignPermissionCommand extends Command
                 [
                     ['Role', $role->name],
                     ['Guard', $role->guard_name],
-                    ['Previous Permissions', implode(', ', $previousPermissions) ?: '(none)'],
+                    ['Previous Permissions', implode(', ', $previousPermissions)],
                     ['Removed Permissions', implode(', ', $permissions)],
                     ['Current Permissions', implode(', ', $currentPermissions) ?: '(none)'],
                 ]
@@ -171,7 +171,7 @@ class UnassignPermissionCommand extends Command
                 ['Property', 'Value'],
                 [
                     ['User', $user->email],
-                    ['Previous Direct Permissions', implode(', ', $previousPermissions) ?: '(none)'],
+                    ['Previous Direct Permissions', implode(', ', $previousPermissions)],
                     ['Removed Permissions', implode(', ', $permissions)],
                     ['Current Direct Permissions', implode(', ', $currentPermissions) ?: '(none)'],
                     ['All Permissions (incl. via roles)', count($allPermissions).' total'],
@@ -191,7 +191,7 @@ class UnassignPermissionCommand extends Command
      */
     protected function gatherPermissions(): array
     {
-        $permissions = $this->argument('permission') ?? [];
+        $permissions = $this->argument('permission');
 
         // From -P / --permission options (repeatable)
         if ($permissionOptions = $this->option('permission')) {

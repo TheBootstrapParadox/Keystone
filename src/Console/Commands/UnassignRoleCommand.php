@@ -70,7 +70,7 @@ class UnassignRoleCommand extends Command
                 ['Property', 'Value'],
                 [
                     ['User', $user->email],
-                    ['Previous Roles', implode(', ', $previousRoles) ?: '(none)'],
+                    ['Previous Roles', implode(', ', $previousRoles)],
                     ['Removed Roles', implode(', ', $roles)],
                     ['Current Roles', implode(', ', $currentRoles) ?: '(none)'],
                 ]
@@ -89,7 +89,7 @@ class UnassignRoleCommand extends Command
      */
     protected function gatherRoles(): array
     {
-        $roles = $this->argument('role') ?? [];
+        $roles = $this->argument('role');
 
         // From -R / --role options (repeatable)
         if ($roleOptions = $this->option('role')) {

@@ -84,6 +84,8 @@ class KeystoneRole extends Model
 
     /**
      * The permissions that belong to the role.
+     *
+     * @return BelongsToMany<KeystonePermission, $this>
      */
     public function permissions(): BelongsToMany
     {

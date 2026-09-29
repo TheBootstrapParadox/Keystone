@@ -31,6 +31,8 @@ trait HasKeystone
 
     /**
      * User's roles relationship with tenant filtering
+     *
+     * @return MorphToMany<KeystoneRole, $this>
      */
     public function roles(): MorphToMany
     {
@@ -58,6 +60,8 @@ trait HasKeystone
 
     /**
      * User's direct permissions (not via roles)
+     *
+     * @return MorphToMany<KeystonePermission, $this>
      */
     public function permissions(): MorphToMany
     {
@@ -327,7 +331,7 @@ trait HasKeystone
 
         return $this->roles
             ->where('guard_name', $guard)
-            ->flatMap->permissions
+            ->flatMap(fn (KeystoneRole $role) => $role->permissions)
             ->where('guard_name', $guard)
             ->contains('name', $permissionName);
     }
@@ -339,7 +343,7 @@ trait HasKeystone
     {
         $permissions = $this->permissions;
 
-        $this->roles->each(function ($role) use (&$permissions) {
+        $this->roles->each(function (KeystoneRole $role) use (&$permissions) {
             $permissions = $permissions->merge($role->permissions);
         });
 

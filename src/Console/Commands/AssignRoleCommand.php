@@ -97,7 +97,7 @@ class AssignRoleCommand extends Command
      */
     protected function gatherRoles(): array
     {
-        $roles = $this->argument('role') ?? [];
+        $roles = $this->argument('role');
 
         // From -R / --role options (repeatable)
         if ($roleOptions = $this->option('role')) {
