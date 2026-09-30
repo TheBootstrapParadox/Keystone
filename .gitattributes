@@ -6,6 +6,39 @@
 *.md diff=markdown
 *.php diff=php
 
+# Keep the package archive to what consumers need: src/, config/keystone.php,
+# database/migrations/, Keystone's seeders, routes/, and the top-level docs.
+# Everything below is the development app skeleton, tests, or tooling.
+/.editorconfig export-ignore
+/.env.example export-ignore
+/.gitattributes export-ignore
 /.github export-ignore
-CHANGELOG.md export-ignore
-.styleci.yml export-ignore
+/.gitignore export-ignore
+/.styleci.yml export-ignore
+/AGENTS.md export-ignore
+/CLAUDE.md export-ignore
+/app export-ignore
+/artisan export-ignore
+/bin export-ignore
+/bootstrap export-ignore
+/config/app.php export-ignore
+/config/auth.php export-ignore
+/config/cache.php export-ignore
+/config/database.php export-ignore
+/config/filesystems.php export-ignore
+/config/logging.php export-ignore
+/config/mail.php export-ignore
+/config/queue.php export-ignore
+/config/services.php export-ignore
+/config/session.php export-ignore
+/database/.gitignore export-ignore
+/database/factories export-ignore
+/database/seeders/DatabaseSeeder.php export-ignore
+/docs/superpowers export-ignore
+/openspec export-ignore
+/phpstan.neon export-ignore
+/phpunit.single-tenant.xml export-ignore
+/phpunit.xml export-ignore
+/public export-ignore
+/storage export-ignore
+/tests export-ignore

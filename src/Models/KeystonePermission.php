@@ -2,8 +2,10 @@
 
 namespace BSPDX\Keystone\Models;
 
+use BSPDX\Keystone\Exceptions\PermissionAlreadyExists;
 use BSPDX\Keystone\Models\Concerns\ResolvesByNameForTenant;
 use BSPDX\Keystone\Services\PermissionRegistrar;
+use BSPDX\Keystone\Support\DefaultGuard;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -65,15 +67,6 @@ class KeystonePermission extends Model
     ];
 
     /**
-     * Default values for attributes.
-     *
-     * @var array<string, mixed>
-     */
-    protected $attributes = [
-        'guard_name' => 'web',
-    ];
-
-    /**
      * The "booted" method of the model.
      */
     protected static function booted(): void
@@ -99,14 +92,28 @@ class KeystonePermission extends Model
         static::creating(function ($permission) {
             // Set guard_name if not provided
             if (! isset($permission->guard_name)) {
-                $permission->guard_name = 'web';
+                $permission->guard_name = DefaultGuard::resolve();
             }
 
             // Set tenant_id for multi-tenant mode
             if (config('keystone.features.multi_tenant', false) && auth()->check() && ! isset($permission->tenant_id)) {
                 $permission->tenant_id = auth()->user()->tenant_id;
             }
+
+            static::guardDuplicate($permission);
         });
+
+        static::updating(fn (self $permission) => static::guardDuplicate($permission));
+    }
+
+    /**
+     * @throws PermissionAlreadyExists
+     */
+    protected static function guardDuplicate(self $permission): void
+    {
+        if ($permission->duplicatesAnotherRow()) {
+            throw PermissionAlreadyExists::create($permission->name, $permission->guard_name, $permission->tenant_id);
+        }
     }
 
     // ============================================
@@ -120,12 +127,14 @@ class KeystonePermission extends Model
      */
     public function roles(): BelongsToMany
     {
+        // Not narrowed by the logged-in caller's tenant scope: what a row holds
+        // does not depend on who is asking.
         return $this->belongsToMany(
             KeystoneRole::class,
             'role_has_permissions',
             'permission_id',
             'role_id'
-        );
+        )->withoutGlobalScope('tenant')->withTimestamps();
     }
 
     // ============================================
@@ -143,6 +152,7 @@ class KeystonePermission extends Model
         $roleModels = $this->convertToRoleModels($roles);
 
         $this->roles()->syncWithoutDetaching($roleModels->pluck('id'));
+        $this->unsetRelation('roles');
 
         return $this;
     }
@@ -158,6 +168,7 @@ class KeystonePermission extends Model
         $roleModels = $this->convertToRoleModels($roles);
 
         $this->roles()->sync($roleModels->pluck('id'));
+        $this->unsetRelation('roles');
 
         return $this;
     }
@@ -173,6 +184,7 @@ class KeystonePermission extends Model
         $roleModels = $this->convertToRoleModels($roles);
 
         $this->roles()->detach($roleModels->pluck('id'));
+        $this->unsetRelation('roles');
 
         return $this;
     }
@@ -233,21 +245,9 @@ class KeystonePermission extends Model
      */
     protected function convertToRoleModels(array $roles): Collection
     {
-        return collect($roles)->flatten()->map(function ($role) {
-            if ($role instanceof KeystoneRole) {
-                return $role;
-            }
-
-            if (is_string($role)) {
-                return KeystoneRole::findByNameForTenant($role, $this->keystoneTenantId());
-            }
-
-            if (is_int($role)) {
-                return KeystoneRole::findOrFail($role);
-            }
-
-            throw new \InvalidArgumentException('Invalid role type provided');
-        });
+        return collect($roles)->flatten()->map(
+            fn ($role) => KeystoneRole::resolveForTenant($role, $this->keystoneTenantId())
+        );
     }
 
     /**

@@ -4,11 +4,11 @@ namespace BSPDX\Keystone;
 
 use BSPDX\Keystone\Console\Commands\AssignPermissionCommand;
 use BSPDX\Keystone\Console\Commands\AssignRoleCommand;
+use BSPDX\Keystone\Console\Commands\EnableMultiTenancyCommand;
 use BSPDX\Keystone\Console\Commands\MakePermissionCommand;
 use BSPDX\Keystone\Console\Commands\MakeRoleCommand;
 use BSPDX\Keystone\Console\Commands\UnassignPermissionCommand;
 use BSPDX\Keystone\Console\Commands\UnassignRoleCommand;
-use BSPDX\Keystone\Http\Middleware\EnsureFeatureEnabled;
 use BSPDX\Keystone\Http\Middleware\EnsureHasPermission;
 use BSPDX\Keystone\Http\Middleware\EnsureHasRole;
 use BSPDX\Keystone\Services\AuthorizationService;
@@ -21,7 +21,6 @@ use BSPDX\Keystone\Services\PermissionRegistrar;
 use BSPDX\Keystone\Services\PermissionService;
 use BSPDX\Keystone\Services\RoleService;
 use Illuminate\Contracts\Auth\Access\Gate;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
 class KeystoneServiceProvider extends ServiceProvider
@@ -101,18 +100,14 @@ class KeystoneServiceProvider extends ServiceProvider
                 AssignPermissionCommand::class,
                 UnassignRoleCommand::class,
                 UnassignPermissionCommand::class,
+                EnableMultiTenancyCommand::class,
             ]);
         }
 
-        // Load package routes if enabled
-        if (config('keystone.load_routes', false)) {
-            if (
-                ! file_exists(base_path('routes/keystone-web.php')) &&
-                ! file_exists(base_path('routes/keystone-api.php'))
-            ) {
-                $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
-                $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
-            }
+        // Load the management API routes if enabled and not published. The demo
+        // web routes (routes/web.php) are an example to publish, never loaded.
+        if (config('keystone.load_routes', false) && ! file_exists(base_path('routes/keystone-api.php'))) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
         }
 
         // Load migrations
@@ -128,9 +123,10 @@ class KeystoneServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations' => database_path('migrations'),
         ], 'keystone-migrations');
 
-        // Publish seeders
+        // Publish Keystone's own seeders (never the dev app's DatabaseSeeder)
         $this->publishes([
-            __DIR__.'/../database/seeders' => database_path('seeders'),
+            __DIR__.'/../database/seeders/KeystoneSeeder.php' => database_path('seeders/KeystoneSeeder.php'),
+            __DIR__.'/../database/seeders/KeystoneDemoUserSeeder.php' => database_path('seeders/KeystoneDemoUserSeeder.php'),
         ], 'keystone-seeders');
 
         // Publish example routes
@@ -139,41 +135,23 @@ class KeystoneServiceProvider extends ServiceProvider
             __DIR__.'/../routes/api.php' => base_path('routes/keystone-api.php'),
         ], 'keystone-routes');
 
-        // Register middleware aliases
+        // Register middleware aliases. The namespaced ones always; the short
+        // ones only when the application has not defined its own.
         $router = $this->app['router'];
-        $router->aliasMiddleware('keystone.feature', EnsureFeatureEnabled::class);
-        $router->aliasMiddleware('role', EnsureHasRole::class);
-        $router->aliasMiddleware('permission', EnsureHasPermission::class);
+        $router->aliasMiddleware('keystone.role', EnsureHasRole::class);
+        $router->aliasMiddleware('keystone.permission', EnsureHasPermission::class);
 
-        // Register permissions with Laravel Gate
-        // This enables @can('permission.name') in Blade and Gate::allows() in controllers
-        $this->registerPermissionsWithGate();
-    }
-
-    /**
-     * Register all permissions with Laravel's Gate system.
-     */
-    protected function registerPermissionsWithGate(): void
-    {
-        // Register permissions with Gate
-        // Skip only during migrations/install, but allow during tests
-        $isRunningTests = $this->app->environment('testing') || $this->app->runningUnitTests();
-        $shouldRegister = ! $this->app->runningInConsole() || $isRunningTests;
-
-        if ($shouldRegister) {
-            try {
-                $permissionRegistrar = $this->app->make(PermissionRegistrar::class);
-                $gate = $this->app->make(Gate::class);
-
-                $permissionRegistrar->registerPermissions($gate);
-            } catch (\Exception $e) {
-                // Don't let a missing-table error during install/migration crash the app,
-                // but surface anything else — silent failure here means can() silently
-                // returns false for everyone with no trace of why.
-                Log::warning('Keystone: failed to register permissions with Gate.', [
-                    'exception' => $e,
-                ]);
+        foreach (['role' => EnsureHasRole::class, 'permission' => EnsureHasPermission::class] as $alias => $middleware) {
+            if (! array_key_exists($alias, $router->getMiddleware())) {
+                $router->aliasMiddleware($alias, $middleware);
             }
         }
+
+        // Register Keystone's permission check with the Gate whenever it is
+        // resolved, in every context (HTTP, queue workers, scheduler, tinker).
+        // Registration adds a closure only and never touches the database.
+        $this->callAfterResolving(Gate::class, function (Gate $gate, $app) {
+            $app->make(PermissionRegistrar::class)->registerPermissions($gate);
+        });
     }
 }

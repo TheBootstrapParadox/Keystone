@@ -148,6 +148,25 @@ class TenantNameResolutionTest extends TestCase
         $this->assertSame([$roleB->id], $permB->roles()->pluck('roles.id')->all());
     }
 
+    #[Test]
+    public function name_resolution_only_matches_the_default_guard()
+    {
+        $apiManager = KeystoneRole::withoutTenant()->create(['name' => 'manager', 'guard_name' => 'api', 'tenant_id' => self::TENANT_B]);
+        $user = $this->user(self::TENANT_B);
+
+        try {
+            $user->assignRole('manager');
+            $this->fail('A role on a non-default guard should not resolve by name.');
+        } catch (ModelNotFoundException) {
+            $this->assertSame([], $this->heldRoleIds($user));
+        }
+
+        $this->assertSame($apiManager->id, KeystoneRole::findByNameForTenant('manager', self::TENANT_B, 'api')->id);
+
+        $user->assignRole($apiManager);
+        $this->assertSame([$apiManager->id], $this->heldRoleIds($user));
+    }
+
     private function role(string $name, ?string $tenantId): KeystoneRole
     {
         return KeystoneRole::withoutTenant()->create(['name' => $name, 'tenant_id' => $tenantId]);

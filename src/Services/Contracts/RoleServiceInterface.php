@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Services\Contracts;
 
+use BSPDX\Keystone\Exceptions\CannotDeleteSuperAdminRole;
 use BSPDX\Keystone\Models\KeystoneRole;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Collection;
@@ -16,12 +17,12 @@ interface RoleServiceInterface
     /**
      * Create a new role.
      */
-    public function create(string $name, string $guardName = 'web'): KeystoneRole;
+    public function create(string $name, ?string $guardName = null): KeystoneRole;
 
     /**
      * Delete a role.
      *
-     * @throws \Exception if role cannot be deleted
+     * @throws CannotDeleteSuperAdminRole
      */
     public function delete(KeystoneRole $role): void;
 
@@ -38,7 +39,7 @@ interface RoleServiceInterface
     /**
      * Find a role by name.
      */
-    public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystoneRole;
+    public function findByName(string $name, ?string $guardName = null, ?string $tenantId = null): ?KeystoneRole;
 
     /**
      * Get all roles for a specific tenant.

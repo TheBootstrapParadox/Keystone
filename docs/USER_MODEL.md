@@ -44,6 +44,11 @@ That's the entire integration. The trait adds:
 - `hasRole()`, `hasAnyRole()`, `hasAllRoles()`, `hasPermissionTo()`, `hasAnyPermission()`, `hasAllPermissions()`, `hasDirectPermission()`
 - `isSuperAdmin()`, `canBypassPermissions()`
 - A `scopeRole()` query scope: `User::role('admin')->get()`
+- Cleanup of the user's role and permission assignments when the user is deleted (on
+  force-delete for soft-deleting models)
+
+Checks use your default guard (`auth.defaults.guard`) unless you pass one, and assignment
+methods accept names, integer IDs, or models.
 
 It does not add anything related to authentication — no password handling, no tokens, no 2FA,
 no passkeys. Add those yourself via Fortify, Sanctum, `laravel/passkeys`, or whatever your
@@ -64,13 +69,14 @@ set it in `config/keystone.php`:
 Console commands (`keystone:assign-role`, etc.) and the RBAC migrations use this value —
 falling back to `auth.providers.users.model` — to resolve which class to query. No table-name
 or primary-key-type configuration is needed: Keystone reads your model's own `getTable()` and
-detects UUID primary keys via `uniqueIds()` automatically.
+detects UUID and ULID primary keys automatically. Commands accept a user's primary key
+(integer, UUID, or ULID) or email.
 
-## UUID or BigInt Primary Keys
+## UUID, ULID, or BigInt Primary Keys
 
 Keystone's role/permission pivot tables (`model_has_roles`, `model_has_permissions`) store
-`model_id` as either a UUID or an unsigned big integer, detected automatically from your User
-model at migration time (via `uniqueIds()`). No configuration is required — just run
+`model_id` as a UUID (`HasUuids`), a ULID (`HasUlids`), or an unsigned big integer, detected
+automatically from your User model at migration time. No configuration is required — just run
 `php artisan migrate` after installing.
 
 `tenant_id` (when multi-tenancy is enabled) is always a UUID column, regardless of your User

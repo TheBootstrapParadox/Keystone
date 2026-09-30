@@ -3,7 +3,10 @@
 namespace BSPDX\Keystone\Models;
 
 use App\Models\User;
+use BSPDX\Keystone\Exceptions\ReservedRoleName;
+use BSPDX\Keystone\Exceptions\RoleAlreadyExists;
 use BSPDX\Keystone\Models\Concerns\ResolvesByNameForTenant;
+use BSPDX\Keystone\Support\DefaultGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -69,7 +72,7 @@ class KeystoneRole extends Model
         static::creating(function ($role) {
             // Set guard_name if not provided
             if (! isset($role->guard_name)) {
-                $role->guard_name = 'web';
+                $role->guard_name = DefaultGuard::resolve();
             }
 
             // Set tenant_id for multi-tenant mode
@@ -78,7 +81,42 @@ class KeystoneRole extends Model
                 ! isset($role->tenant_id)) {
                 $role->tenant_id = auth()->user()->tenant_id;
             }
+
+            static::guardReservedName($role);
+            static::guardDuplicate($role);
         });
+
+        static::updating(function (self $role) {
+            static::guardReservedName($role);
+            static::guardDuplicate($role);
+        });
+    }
+
+    /**
+     * @throws RoleAlreadyExists
+     */
+    protected static function guardDuplicate(self $role): void
+    {
+        if ($role->duplicatesAnotherRow()) {
+            throw RoleAlreadyExists::create($role->name, $role->guard_name, $role->tenant_id);
+        }
+    }
+
+    /**
+     * Refuse to store the super-admin name on a tenant-scoped role.
+     *
+     * Only a global role confers super-admin status, so a tenant role with that
+     * name would be misleading at best.
+     *
+     * @throws ReservedRoleName
+     */
+    protected static function guardReservedName(self $role): void
+    {
+        if (config('keystone.features.multi_tenant', false)
+            && $role->tenant_id !== null
+            && $role->name === config('keystone.rbac.super_admin_role', 'super-admin')) {
+            throw ReservedRoleName::forTenant($role->name);
+        }
     }
 
     // ============================================
@@ -92,12 +130,14 @@ class KeystoneRole extends Model
      */
     public function permissions(): BelongsToMany
     {
+        // Not narrowed by the logged-in caller's tenant scope: what a row holds
+        // does not depend on who is asking.
         return $this->belongsToMany(
             KeystonePermission::class,
             'role_has_permissions',
             'role_id',
             'permission_id'
-        );
+        )->withoutGlobalScope('tenant')->withTimestamps();
     }
 
     /**
@@ -145,18 +185,20 @@ class KeystoneRole extends Model
         $permissionModels = $this->convertToPermissionModels($permissions);
 
         $this->permissions()->sync($permissionModels->pluck('id'));
+        $this->unsetRelation('permissions');
 
         return $this;
     }
 
     /**
-     * Revoke a permission from this role.
+     * Revoke permissions from this role.
      */
-    public function revokePermissionTo($permission): self
+    public function revokePermissionTo(...$permissions): self
     {
-        $permissionModel = $this->convertToPermissionModels([$permission])->first();
+        $permissionModels = $this->convertToPermissionModels($permissions);
 
-        $this->permissions()->detach($permissionModel->id);
+        $this->permissions()->detach($permissionModels->pluck('id'));
+        $this->unsetRelation('permissions');
 
         return $this;
     }
@@ -206,17 +248,23 @@ class KeystoneRole extends Model
      */
     protected function convertToPermissionModels(array $permissions): Collection
     {
-        return collect($permissions)->flatten()->map(fn ($permission) => $permission instanceof KeystonePermission
-            ? $permission
-            : KeystonePermission::findByNameForTenant($permission, $this->keystoneTenantId()));
+        return collect($permissions)->flatten()->map(
+            fn ($permission) => KeystonePermission::resolveForTenant($permission, $this->keystoneTenantId())
+        );
     }
 
     /**
      * Determine if this role is the super admin role.
+     *
+     * In multi-tenant mode only a global role qualifies.
      */
     public function isSuperAdmin(): bool
     {
-        return $this->name === config('keystone.rbac.super_admin_role', 'super-admin');
+        if ($this->name !== config('keystone.rbac.super_admin_role', 'super-admin')) {
+            return false;
+        }
+
+        return ! config('keystone.features.multi_tenant', false) || $this->tenant_id === null;
     }
 
     /**

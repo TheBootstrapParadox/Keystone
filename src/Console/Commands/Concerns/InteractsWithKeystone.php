@@ -4,6 +4,11 @@ namespace BSPDX\Keystone\Console\Commands\Concerns;
 
 use App\Models\User;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
+use BSPDX\Keystone\Support\DefaultGuard;
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 trait InteractsWithKeystone
 {
@@ -21,7 +26,7 @@ trait InteractsWithKeystone
      */
     protected function getDefaultGuard(): string
     {
-        return config('auth.defaults.guard', 'web');
+        return DefaultGuard::resolve();
     }
 
     /**
@@ -67,16 +72,43 @@ trait InteractsWithKeystone
     }
 
     /**
-     * Find a user by ID or email.
+     * Find a user by primary key or email.
+     *
+     * The identifier is only tried as a key when it has the key's shape
+     * (digits, UUID, or ULID), so an email is never compared against an
+     * integer column (which PostgreSQL rejects).
      */
     protected function findUser(string $identifier)
     {
         $userClass = $this->getUserModel();
 
-        if (is_numeric($identifier)) {
-            return $userClass::find($identifier);
+        if ($this->looksLikeUserKey(new $userClass, $identifier)
+            && $user = $userClass::find($identifier)) {
+            return $user;
         }
 
         return $userClass::where('email', $identifier)->first();
+    }
+
+    /**
+     * Whether the identifier could be a primary key of the given user model.
+     */
+    protected function looksLikeUserKey(Model $user, string $identifier): bool
+    {
+        $traits = class_uses_recursive($user);
+
+        if (in_array(HasUuids::class, $traits, true)) {
+            return Str::isUuid($identifier);
+        }
+
+        if (in_array(HasUlids::class, $traits, true)) {
+            return Str::isUlid($identifier);
+        }
+
+        if (in_array($user->getKeyType(), ['int', 'integer'], true)) {
+            return ctype_digit($identifier);
+        }
+
+        return true;
     }
 }

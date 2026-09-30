@@ -4,6 +4,7 @@ namespace BSPDX\Keystone\Traits;
 
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
+use BSPDX\Keystone\Support\DefaultGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Collection;
@@ -11,6 +12,28 @@ use Illuminate\Support\Facades\DB;
 
 trait HasKeystone
 {
+    /**
+     * Remove a deleted user's role and permission assignments (every tenant).
+     *
+     * Soft-deleted users keep them so a restore brings their access back; they
+     * are removed on force-delete.
+     */
+    public static function bootHasKeystone(): void
+    {
+        static::deleted(function ($model) {
+            if (method_exists($model, 'isForceDeleting') && ! $model->isForceDeleting()) {
+                return;
+            }
+
+            foreach (['model_has_roles', 'model_has_permissions'] as $table) {
+                DB::table($table)
+                    ->where('model_type', $model->getMorphClass())
+                    ->where('model_id', $model->getKey())
+                    ->delete();
+            }
+        });
+    }
+
     // ============================================
     // QUERY SCOPES
     // ============================================
@@ -30,61 +53,98 @@ trait HasKeystone
     // ============================================
 
     /**
-     * User's roles relationship with tenant filtering
+     * User's roles.
+     *
+     * Resolved from this user's own assignments only, whoever is logged in: the
+     * roles' tenant scope is removed, and in multi-tenant mode a user with a
+     * tenant sees assignments stored for that tenant or with no tenant.
      *
      * @return MorphToMany<KeystoneRole, $this>
      */
     public function roles(): MorphToMany
     {
-        $relation = $this->morphToMany(
-            KeystoneRole::class,
-            'model',
-            'model_has_roles',
-            'model_id',
-            'role_id'
-        )->withTimestamps();
+        return $this->keystoneAssignmentRelation(KeystoneRole::class, 'model_has_roles', 'role_id');
+    }
 
-        // Apply tenant filtering on pivot table
+    /**
+     * User's direct permissions (not via roles), resolved like roles().
+     *
+     * @return MorphToMany<KeystonePermission, $this>
+     */
+    public function permissions(): MorphToMany
+    {
+        return $this->keystoneAssignmentRelation(KeystonePermission::class, 'model_has_permissions', 'permission_id');
+    }
+
+    /**
+     * @template TRelated of KeystoneRole|KeystonePermission
+     *
+     * @param  class-string<TRelated>  $related
+     * @return MorphToMany<TRelated, $this>
+     */
+    protected function keystoneAssignmentRelation(string $related, string $table, string $relatedPivotKey): MorphToMany
+    {
+        $relation = $this->morphToMany($related, 'model', $table, 'model_id', $relatedPivotKey)
+            ->withoutGlobalScope('tenant')
+            ->withTimestamps();
+
         if (config('keystone.features.multi_tenant', false)) {
             $relation->withPivot('tenant_id');
-            if ($this->tenant_id) {
-                // User has a tenant: show both tenant-specific and global roles
-                $relation->wherePivotIn('tenant_id', [$this->tenant_id, null]);
-            }
-            // If user has no tenant (tenant_id = NULL), show all roles (no filtering needed)
-            // This allows users without tenants to have roles in non-multi-tenant scenarios
+            $this->constrainToVisibleAssignments($relation, $table);
         }
 
         return $relation;
     }
 
     /**
-     * User's direct permissions (not via roles)
+     * Limit a query on an assignment pivot to rows this user can see: in
+     * multi-tenant mode, a user with a tenant sees rows stored for that tenant
+     * or with no tenant; a user without a tenant sees all of their rows.
      *
-     * @return MorphToMany<KeystonePermission, $this>
+     * @param  MorphToMany<*, *>|\Illuminate\Database\Query\Builder  $query
      */
-    public function permissions(): MorphToMany
+    protected function constrainToVisibleAssignments($query, string $table): void
     {
-        $relation = $this->morphToMany(
-            KeystonePermission::class,
-            'model',
-            'model_has_permissions',
-            'model_id',
-            'permission_id'
-        )->withTimestamps();
-
-        // Apply tenant filtering
-        if (config('keystone.features.multi_tenant', false)) {
-            $relation->withPivot('tenant_id');
-            if ($this->tenant_id) {
-                // User has a tenant: show both tenant-specific and global permissions
-                $relation->wherePivotIn('tenant_id', [$this->tenant_id, null]);
-            }
-            // If user has no tenant (tenant_id = NULL), show all permissions (no filtering needed)
-            // This allows users without tenants to have permissions in non-multi-tenant scenarios
+        if (! config('keystone.features.multi_tenant', false) || $this->tenant_id === null) {
+            return;
         }
 
-        return $relation;
+        $query->where(fn ($q) => $q->where("{$table}.tenant_id", $this->tenant_id)->orWhereNull("{$table}.tenant_id"));
+    }
+
+    /**
+     * Attach the given roles/permissions that this user cannot already see,
+     * stamping the pivot with the user's tenant in multi-tenant mode.
+     *
+     * @param  Collection<int, KeystoneRole|KeystonePermission>  $models
+     */
+    protected function attachMissingAssignments(string $table, string $relatedPivotKey, Collection $models): void
+    {
+        $ids = $models->pluck('id')->unique()->values();
+
+        $existing = DB::table($table)
+            ->where('model_type', $this->getMorphClass())
+            ->where('model_id', $this->getKey())
+            ->whereIn($relatedPivotKey, $ids);
+        $this->constrainToVisibleAssignments($existing, $table);
+
+        $missing = $ids->diff($existing->pluck($relatedPivotKey));
+
+        if ($missing->isEmpty()) {
+            return;
+        }
+
+        $now = now();
+        $tenant = config('keystone.features.multi_tenant', false) ? ['tenant_id' => $this->tenant_id] : [];
+
+        DB::table($table)->insert($missing->map(fn ($id) => [
+            $relatedPivotKey => $id,
+            'model_type' => $this->getMorphClass(),
+            'model_id' => $this->getKey(),
+            ...$tenant,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ])->values()->all());
     }
 
     // ============================================
@@ -96,18 +156,7 @@ trait HasKeystone
      */
     public function assignRole(...$roles): self
     {
-        $roleModels = $this->convertToRoleModels($roles);
-
-        $multiTenant = config('keystone.features.multi_tenant', false);
-
-        $pivotData = [];
-        foreach ($roleModels as $role) {
-            $pivotData[$role->id] = $multiTenant
-                ? ['tenant_id' => $this->tenant_id, 'created_at' => now(), 'updated_at' => now()]
-                : ['created_at' => now(), 'updated_at' => now()];
-        }
-
-        $this->roles()->syncWithoutDetaching($pivotData);
+        $this->attachMissingAssignments('model_has_roles', 'role_id', $this->convertToRoleModels($roles));
         $this->unsetRelation('roles'); // Force reload of roles relationship
 
         return $this;
@@ -175,18 +224,7 @@ trait HasKeystone
      */
     public function givePermissionTo(...$permissions): self
     {
-        $permissionModels = $this->convertToPermissionModels($permissions);
-
-        $multiTenant = config('keystone.features.multi_tenant', false);
-
-        $pivotData = [];
-        foreach ($permissionModels as $permission) {
-            $pivotData[$permission->id] = $multiTenant
-                ? ['tenant_id' => $this->tenant_id, 'created_at' => now(), 'updated_at' => now()]
-                : ['created_at' => now(), 'updated_at' => now()];
-        }
-
-        $this->permissions()->syncWithoutDetaching($pivotData);
+        $this->attachMissingAssignments('model_has_permissions', 'permission_id', $this->convertToPermissionModels($permissions));
         $this->unsetRelation('permissions'); // Force reload of permissions relationship
 
         return $this;
@@ -252,8 +290,10 @@ trait HasKeystone
      * The super-admin bypass applies to permission checks, the Gate, the
      * role/permission middleware, and AuthorizationService — not here.
      */
-    public function hasRole($roles, string $guard = 'web'): bool
+    public function hasRole($roles, ?string $guard = null): bool
     {
+        $guard = DefaultGuard::resolve($guard);
+
         if (is_string($roles)) {
             return $this->roles
                 ->where('guard_name', $guard)
@@ -262,6 +302,10 @@ trait HasKeystone
 
         if ($roles instanceof KeystoneRole) {
             return $this->roles->contains('id', $roles->id);
+        }
+
+        if (is_int($roles)) {
+            return $this->roles->contains('id', $roles);
         }
 
         if (is_array($roles)) {
@@ -288,7 +332,8 @@ trait HasKeystone
      */
     public function hasAllRoles(...$roles): bool
     {
-        foreach ($roles as $role) {
+        // Flatten so an array argument means "all of these", never "any of these"
+        foreach (collect($roles)->flatten() as $role) {
             if (! $this->hasRole($role)) {
                 return false;
             }
@@ -300,17 +345,17 @@ trait HasKeystone
     /**
      * Check if user has a specific permission
      */
-    public function hasPermissionTo($permission, string $guard = 'web'): bool
+    public function hasPermissionTo($permission, ?string $guard = null): bool
     {
+        $guard = DefaultGuard::resolve($guard);
+
         // Super-admin bypass
         if ($this->isSuperAdmin()) {
             return true;
         }
 
         // Check direct permissions
-        $permissionName = $permission instanceof KeystonePermission
-            ? $permission->name
-            : $permission;
+        $permissionName = $this->keystonePermissionName($permission);
 
         if ($this->permissions->where('guard_name', $guard)->contains('name', $permissionName)) {
             return true;
@@ -323,11 +368,13 @@ trait HasKeystone
     /**
      * Check if user has permission via any of their roles
      */
-    protected function hasPermissionViaRole($permission, string $guard = 'web'): bool
+    protected function hasPermissionViaRole($permission, ?string $guard = null): bool
     {
-        $permissionName = $permission instanceof KeystonePermission
-            ? $permission->name
-            : $permission;
+        $guard = DefaultGuard::resolve($guard);
+
+        $permissionName = $this->keystonePermissionName($permission);
+
+        $this->loadMissing('roles.permissions');
 
         return $this->roles
             ->where('guard_name', $guard)
@@ -341,6 +388,8 @@ trait HasKeystone
      */
     public function getAllPermissions(): Collection
     {
+        $this->loadMissing('roles.permissions');
+
         $permissions = $this->permissions;
 
         $this->roles->each(function (KeystoneRole $role) use (&$permissions) {
@@ -393,18 +442,17 @@ trait HasKeystone
     }
 
     /**
-     * Check if user has a direct permission (not via role)
+     * Check if user has a direct permission (not via role).
+     *
+     * Literal, like hasRole(): a super-admin only "has" direct permissions they
+     * actually hold. AuthorizationService::userHasDirectPermission() keeps the
+     * bypass.
      */
-    public function hasDirectPermission($permission, string $guard = 'web'): bool
+    public function hasDirectPermission($permission, ?string $guard = null): bool
     {
-        // Super-admin bypass
-        if ($this->isSuperAdmin()) {
-            return true;
-        }
+        $guard = DefaultGuard::resolve($guard);
 
-        $permissionName = $permission instanceof KeystonePermission
-            ? $permission->name
-            : $permission;
+        $permissionName = $this->keystonePermissionName($permission);
 
         return $this->permissions
             ->where('guard_name', $guard)
@@ -420,9 +468,9 @@ trait HasKeystone
      */
     protected function convertToRoleModels($roles): Collection
     {
-        return collect($roles)->flatten()->map(fn ($role) => $role instanceof KeystoneRole
-            ? $role
-            : KeystoneRole::findByNameForTenant($role, $this->keystoneUserTenantId()));
+        return collect($roles)->flatten()->map(
+            fn ($role) => KeystoneRole::resolveForTenant($role, $this->keystoneUserTenantId())
+        );
     }
 
     /**
@@ -430,9 +478,25 @@ trait HasKeystone
      */
     protected function convertToPermissionModels($permissions): Collection
     {
-        return collect($permissions)->flatten()->map(fn ($permission) => $permission instanceof KeystonePermission
-            ? $permission
-            : KeystonePermission::findByNameForTenant($permission, $this->keystoneUserTenantId()));
+        return collect($permissions)->flatten()->map(
+            fn ($permission) => KeystonePermission::resolveForTenant($permission, $this->keystoneUserTenantId())
+        );
+    }
+
+    /**
+     * The name of a permission given as a name, model, or integer ID (null if no such ID).
+     */
+    protected function keystonePermissionName($permission): ?string
+    {
+        if ($permission instanceof KeystonePermission) {
+            return $permission->name;
+        }
+
+        if (is_int($permission)) {
+            return KeystonePermission::withoutGlobalScope('tenant')->whereKey($permission)->value('name');
+        }
+
+        return $permission;
     }
 
     /**
@@ -449,12 +513,17 @@ trait HasKeystone
 
     /**
      * Determine if the user is a super admin.
+     *
+     * The user must hold the super-admin role on the default guard; in
+     * multi-tenant mode that role must also be global.
      */
     public function isSuperAdmin(): bool
     {
-        $superAdminRole = config('keystone.rbac.super_admin_role', 'super-admin');
+        $guard = DefaultGuard::resolve();
 
-        return $this->roles->contains('name', $superAdminRole);
+        return $this->roles->contains(
+            fn (KeystoneRole $role) => $role->guard_name === $guard && $role->isSuperAdmin()
+        );
     }
 
     /**

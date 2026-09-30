@@ -1,9 +1,8 @@
 <?php
 
-use App\Models\User;
+use BSPDX\Keystone\Database\MultiTenantSchemaUpgrade;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -11,8 +10,10 @@ return new class extends Migration
     /**
      * Run the migrations.
      *
-     * This migration adds tenant_id to pivot tables if they don't already have it.
-     * This is useful when upgrading from non-multi-tenant to multi-tenant setup.
+     * Adds tenant_id to the assignment pivots if they don't already have it
+     * (a no-op on a fresh multi-tenant install). Installs that already ran
+     * this migration in single-tenant mode upgrade with
+     * `php artisan keystone:enable-multi-tenancy` instead.
      */
     public function up(): void
     {
@@ -21,65 +22,7 @@ return new class extends Migration
             return;
         }
 
-        // Resolve the user model class for backfilling tenant_id
-        $authenticatableClass = config('keystone.user.model')
-            ?? config('auth.providers.users.model', User::class);
-        $userTable = (new $authenticatableClass)->getTable();
-
-        // Add tenant_id to model_has_roles if not exists
-        if (! Schema::hasColumn('model_has_roles', 'tenant_id')) {
-            Schema::table('model_has_roles', function (Blueprint $table) {
-                $table->uuid('tenant_id')->nullable()->after('model_id');
-                $table->index('tenant_id', 'model_has_roles_tenant_id_index');
-            });
-
-            // Backfill tenant_id from user records
-            $this->backfillTenantId('model_has_roles', $userTable);
-        }
-
-        // Add tenant_id to model_has_permissions if not exists
-        if (! Schema::hasColumn('model_has_permissions', 'tenant_id')) {
-            Schema::table('model_has_permissions', function (Blueprint $table) {
-                $table->uuid('tenant_id')->nullable()->after('model_id');
-                $table->index('tenant_id', 'model_has_permissions_tenant_id_index');
-            });
-
-            // Backfill tenant_id from user records
-            $this->backfillTenantId('model_has_permissions', $userTable);
-        }
-    }
-
-    /**
-     * Backfill tenant_id in pivot tables from user records.
-     */
-    protected function backfillTenantId(string $pivotTable, string $userTable): void
-    {
-        $driverName = DB::connection()->getDriverName();
-
-        if ($driverName === 'sqlite') {
-            // SQLite-compatible syntax using subquery
-            DB::statement("
-                UPDATE {$pivotTable}
-                SET tenant_id = (
-                    SELECT tenant_id FROM {$userTable}
-                    WHERE {$userTable}.id = {$pivotTable}.model_id
-                    AND {$pivotTable}.model_type LIKE '%User'
-                )
-                WHERE EXISTS (
-                    SELECT 1 FROM {$userTable}
-                    WHERE {$userTable}.id = {$pivotTable}.model_id
-                    AND {$userTable}.tenant_id IS NOT NULL
-                )
-            ");
-        } else {
-            // MySQL/PostgreSQL syntax with JOIN
-            DB::statement("
-                UPDATE {$pivotTable} pivot
-                JOIN {$userTable} u ON pivot.model_id = u.id AND pivot.model_type LIKE '%User'
-                SET pivot.tenant_id = u.tenant_id
-                WHERE u.tenant_id IS NOT NULL
-            ");
-        }
+        (new MultiTenantSchemaUpgrade)->addPivotTenantColumns();
     }
 
     /**

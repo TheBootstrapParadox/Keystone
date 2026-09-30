@@ -2,9 +2,11 @@
 
 namespace BSPDX\Keystone\Services;
 
+use BSPDX\Keystone\Exceptions\CannotDeleteSuperAdminRole;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
 use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
+use BSPDX\Keystone\Support\DefaultGuard;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Collection;
 
@@ -34,23 +36,23 @@ class RoleService implements RoleServiceInterface
     /**
      * Create a new role.
      */
-    public function create(string $name, string $guardName = 'web'): KeystoneRole
+    public function create(string $name, ?string $guardName = null): KeystoneRole
     {
         return KeystoneRole::create([
             'name' => $name,
-            'guard_name' => $guardName,
+            'guard_name' => DefaultGuard::resolve($guardName),
         ]);
     }
 
     /**
      * Delete a role.
      *
-     * @throws \Exception if role cannot be deleted
+     * @throws CannotDeleteSuperAdminRole
      */
     public function delete(KeystoneRole $role): void
     {
         if ($role->isSuperAdmin()) {
-            throw new \Exception('Cannot delete the super admin role.');
+            throw new CannotDeleteSuperAdminRole;
         }
 
         $role->delete();
@@ -77,9 +79,9 @@ class RoleService implements RoleServiceInterface
     /**
      * Find a role by name.
      */
-    public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystoneRole
+    public function findByName(string $name, ?string $guardName = null, ?string $tenantId = null): ?KeystoneRole
     {
-        $query = KeystoneRole::where('name', $name)->where('guard_name', $guardName);
+        $query = KeystoneRole::where('name', $name)->where('guard_name', DefaultGuard::resolve($guardName));
 
         if (config('keystone.features.multi_tenant', false) && $tenantId !== null) {
             $query->where('tenant_id', $tenantId);

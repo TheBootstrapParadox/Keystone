@@ -23,7 +23,7 @@ Keystone's multi-tenant implementation uses **custom role and permission managem
 - **Automatic filtering** - Authenticated users only see roles/permissions for their tenant
 - **Support for global resources** - Roles and permissions can be global (NULL tenant_id) or tenant-specific
 - **Clean separation** - Tenant logic is handled at the model level through Eloquent global scopes
-- **Optimized queries** - Uses `wherePivotIn()` for efficient tenant filtering in relationships
+- **Caller-independent answers** - What a user holds depends only on their own assignments, never on who is logged in
 
 ### Custom RBAC vs Spatie Permission
 
@@ -160,7 +160,6 @@ CREATE TABLE model_has_roles (
     tenant_id UUID NULL,  -- ALWAYS UUID, tracks which tenant the assignment belongs to
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    deleted_at TIMESTAMP NULL,  -- Soft deletes for audit trail
     FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
     UNIQUE KEY unique_assignment (tenant_id, role_id, model_id, model_type),
     INDEX idx_tenant_id (tenant_id)
@@ -174,7 +173,6 @@ CREATE TABLE model_has_permissions (
     tenant_id UUID NULL,  -- ALWAYS UUID
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    deleted_at TIMESTAMP NULL,  -- Soft deletes for audit trail
     FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE,
     UNIQUE KEY unique_assignment (tenant_id, permission_id, model_id, model_type),
     INDEX idx_tenant_id (tenant_id)
@@ -186,14 +184,13 @@ CREATE TABLE role_has_permissions (
     role_id BIGINT,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    deleted_at TIMESTAMP NULL,  -- Soft deletes for audit trail
     FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE,
     FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
     UNIQUE KEY unique_assignment (permission_id, role_id)
 );
 ```
 
-**Note:** All pivot tables include `timestamps` and `soft deletes` for comprehensive audit trails.
+**Note:** All pivot tables include timestamps. Assignments are hard-deleted, so fresh installs have no `deleted_at` column (installs created before the 1.0 release candidate may still have an unused one). Unique keys treat NULL tenants as distinct, so in multi-tenant mode Keystone also rejects duplicate global roles and permissions at the model level (`RoleAlreadyExists` / `PermissionAlreadyExists`).
 
 ## Global vs Tenant-Specific
 
@@ -329,55 +326,21 @@ $role = KeystoneRole::findByNameForTenant('manager', $tenantId);
 
 When creating roles or permissions, the `tenant_id` is automatically populated from the authenticated user:
 
-```php
-// In KeystoneRole and KeystonePermission models
-static::creating(function ($model) {
-    if (config('keystone.features.multi_tenant', false) && auth()->check() && !isset($model->tenant_id)) {
-        $model->tenant_id = auth()->user()->tenant_id;
-    }
-
-    // Also auto-set guard_name if not provided
-    if (!isset($model->guard_name)) {
-        $model->guard_name = 'web';
-    }
-});
-```
+An explicit `tenant_id` is kept. A missing `guard_name` defaults to your application's default guard (`auth.defaults.guard`). A role named like `keystone.rbac.super_admin_role` can't be created (or renamed to) in a tenant: that throws `ReservedRoleName`.
 
 ### Relationship Filtering
 
-The `HasKeystone` trait defines tenant-aware relationships for roles and permissions:
+The `HasKeystone` trait's `roles()` and `permissions()` relationships filter on the **assignment's** tenant (the pivot `tenant_id`), not on who is logged in:
 
-```php
-// In HasKeystone trait
-public function roles(): MorphToMany
-{
-    $relation = $this->morphToMany(
-        KeystoneRole::class,
-        'model',
-        'model_has_roles',
-        'model_id',
-        'role_id'
-    )->withPivot('tenant_id')->withTimestamps();
+- A user with a tenant sees assignments stored for that tenant, plus assignments stored with no tenant (for example, made before they joined a tenant)
+- A user without a tenant sees all of their assignments
+- The result is the same whether the current caller is that user, another tenant's user, or nobody (a queued job or console command)
 
-    // Apply tenant filtering on pivot table
-    if (config('keystone.features.multi_tenant', false)) {
-        if ($this->tenant_id) {
-            // User has a tenant: show both tenant-specific and global roles
-            $relation->wherePivotIn('tenant_id', [$this->tenant_id, null]);
-        }
-        // If user has no tenant (tenant_id = NULL), show all roles
-    }
-
-    return $relation;
-}
-```
-
-This ensures that:
-- Users only see role/permission assignments for their tenant
-- Global assignments (tenant_id = NULL) are visible to all tenants
-- Users without tenants can access all assignments
+A role's `permissions()` (and a permission's `roles()`) are likewise resolved independently of the logged-in caller. The automatic tenant scope only affects **listing** queries such as `KeystoneRole::all()`.
 
 ## Super-Admin Bypass
+
+In multi-tenant mode, only a **global** role (`tenant_id` NULL) named `keystone.rbac.super_admin_role` makes a user a super-admin. The name is reserved in tenants, so a tenant admin can't mint an application-wide super-admin.
 
 Super-administrators may need to view or manage roles/permissions across **all tenants**. Keystone provides the `withoutTenant()` scope for this:
 
@@ -543,34 +506,13 @@ public function edit(Post $post)
 
 ### How Gate Integration Works
 
-The `PermissionRegistrar` service registers a `Gate::before` callback that:
+The `PermissionRegistrar` service registers one `Gate::before` callback, in every context (HTTP requests, queue workers, the scheduler, tinker). It:
 
-1. Checks if user is a super-admin (bypasses all permission checks)
-2. Looks up the permission by name
-3. Checks if the user has that permission via `hasPermissionTo()`
+1. Returns `true` for super-admins
+2. Returns `true` when the ability is a permission name and the user holds that permission (directly or via a role), checked with `hasPermissionTo()`
+3. Otherwise returns `null`, so Laravel continues to your policies and `Gate::define` abilities
 
-```php
-// In PermissionRegistrar
-$gate->before(function ($user, $ability) {
-    // Super-admin bypass
-    if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
-        return true;
-    }
-
-    // Check if ability corresponds to a permission
-    if (method_exists($user, 'hasPermissionTo')) {
-        $permission = KeystonePermission::withoutTenant()
-            ->where('name', $ability)
-            ->first();
-
-        if ($permission) {
-            return $user->hasPermissionTo($permission) ? true : false;
-        }
-    }
-
-    return null;  // Let Laravel continue checking policies
-});
-```
+Keystone never denies on the Gate's behalf, and only the user's own permissions count. A permission in another tenant that shares a policy ability's name has no effect. Abilities that aren't permission names are recognized from the cached permission list, without a database query.
 
 ## Migration Guide
 
@@ -593,23 +535,15 @@ Enable multi-tenancy in your `.env`:
 KEYSTONE_MULTI_TENANT=true
 ```
 
-#### Step 3: Add tenant_id to Users
+#### Step 3: Upgrade the Schema
 
-If your users table doesn't have a tenant_id column:
+Keystone's migrations have already run in single-tenant mode, and migrations only run once, so upgrade the schema with the dedicated command:
 
 ```bash
-php artisan make:migration add_tenant_id_to_users_table
+php artisan keystone:enable-multi-tenancy
 ```
 
-```php
-public function up()
-{
-    Schema::table('users', function (Blueprint $table) {
-        $table->uuid('tenant_id')->nullable()->after('id');
-        $table->index('tenant_id');
-    });
-}
-```
+It adds `tenant_id` to your users table, `roles`, `permissions`, and both assignment pivots, and makes every unique key tenant-aware. Existing roles and permissions become global. It's idempotent and safe to re-run.
 
 #### Step 4: Run Migrations
 
@@ -617,10 +551,7 @@ public function up()
 php artisan migrate
 ```
 
-The migration will:
-- Add `tenant_id` to roles and permissions tables
-- Add `tenant_id` to pivot tables
-- Add timestamps and soft deletes to pivot tables
+This runs any Keystone migrations you haven't run yet. If you update the package and enable multi-tenancy in the same deploy, the new upgrade migration performs step 3 for you.
 
 #### Step 5: Assign Users to Tenants
 
@@ -676,7 +607,7 @@ Keystone now uses a custom RBAC implementation instead of Spatie's package. The 
 #### Key Differences
 
 1. **No Spatie dependency** - Keystone manages roles and permissions internally
-2. **Custom relationships** - Uses `wherePivotIn()` for tenant filtering
+2. **Custom relationships** - Relationships filter on the assignment's tenant, not the logged-in user's
 3. **Always use Keystone models** - Use `KeystoneRole` and `KeystonePermission`, not Spatie's models
 
 #### Migration Steps
@@ -748,7 +679,8 @@ $user->assignRole('manager');
 **Solution:** Ensure:
 1. The permission exists in the database
 2. The user has the permission (directly or via role)
-3. The PermissionRegistrar is registered in your service provider
+3. The permission and role are on your default guard (`auth.defaults.guard`), or pass the guard explicitly: `$user->hasPermissionTo('edit-posts', 'web')`
+4. The PermissionRegistrar is registered in your service provider
 
 The registration happens automatically in `KeystoneServiceProvider::boot()`.
 

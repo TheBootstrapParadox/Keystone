@@ -7,6 +7,7 @@ use BSPDX\Keystone\Http\Controllers\RolePermissionController;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -25,6 +26,18 @@ class SingleTenantApiTest extends TestCase
         parent::setUp();
 
         config(['keystone.features.multi_tenant' => false]);
+    }
+
+    #[Test]
+    public function single_tenant_schema_has_no_tenant_columns()
+    {
+        if (env('KEYSTONE_MULTI_TENANT')) {
+            $this->markTestSkipped('Only meaningful when migrated in single-tenant mode.');
+        }
+
+        foreach (['users', 'roles', 'permissions', 'model_has_roles', 'model_has_permissions'] as $table) {
+            $this->assertFalse(Schema::hasColumn($table, 'tenant_id'), "{$table}.tenant_id should not exist");
+        }
     }
 
     #[Test]

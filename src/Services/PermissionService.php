@@ -5,6 +5,7 @@ namespace BSPDX\Keystone\Services;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
+use BSPDX\Keystone\Support\DefaultGuard;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Collection;
 
@@ -21,11 +22,11 @@ class PermissionService implements PermissionServiceInterface
     /**
      * Create a new permission.
      */
-    public function create(string $name, string $guardName = 'web'): KeystonePermission
+    public function create(string $name, ?string $guardName = null): KeystonePermission
     {
         return KeystonePermission::create([
             'name' => $name,
-            'guard_name' => $guardName,
+            'guard_name' => DefaultGuard::resolve($guardName),
         ]);
     }
 
@@ -64,9 +65,9 @@ class PermissionService implements PermissionServiceInterface
     /**
      * Find a permission by name.
      */
-    public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystonePermission
+    public function findByName(string $name, ?string $guardName = null, ?string $tenantId = null): ?KeystonePermission
     {
-        $query = KeystonePermission::where('name', $name)->where('guard_name', $guardName);
+        $query = KeystonePermission::where('name', $name)->where('guard_name', DefaultGuard::resolve($guardName));
 
         if (config('keystone.features.multi_tenant', false) && $tenantId !== null) {
             $query->where('tenant_id', $tenantId);

@@ -17,7 +17,7 @@ interface PermissionServiceInterface
     /**
      * Create a new permission.
      */
-    public function create(string $name, string $guardName = 'web'): KeystonePermission;
+    public function create(string $name, ?string $guardName = null): KeystonePermission;
 
     /**
      * Delete a permission.
@@ -42,7 +42,7 @@ interface PermissionServiceInterface
     /**
      * Find a permission by name.
      */
-    public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystonePermission;
+    public function findByName(string $name, ?string $guardName = null, ?string $tenantId = null): ?KeystonePermission;
 
     /**
      * Get all permissions for a specific tenant.

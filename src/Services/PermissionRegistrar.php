@@ -3,9 +3,11 @@
 namespace BSPDX\Keystone\Services;
 
 use BSPDX\Keystone\Models\KeystonePermission;
+use BSPDX\Keystone\Support\DefaultGuard;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\Collection;
+use WeakMap;
 
 /**
  * PermissionRegistrar Service
@@ -28,9 +30,17 @@ class PermissionRegistrar
      */
     protected string $cacheKey = 'keystone.permissions.all.v2';
 
+    /**
+     * Gates that already carry Keystone's callback.
+     *
+     * @var WeakMap<Gate, true>
+     */
+    protected WeakMap $registeredGates;
+
     public function __construct(CacheRepository $cache)
     {
         $this->cache = $cache;
+        $this->registeredGates = new WeakMap;
     }
 
     /**
@@ -45,36 +55,40 @@ class PermissionRegistrar
     }
 
     /**
-     * Register all permissions with Laravel's Gate.
+     * Register Keystone's permission check with Laravel's Gate.
      *
-     * This method:
-     * 1. Adds a Gate::before callback for super-admin bypass
-     * 2. Defines a gate for each permission in the system
+     * Adds a single Gate::before callback that:
+     * 1. allows super-admins every ability;
+     * 2. allows an ability that names a permission the user holds;
+     * 3. otherwise returns null, so policies and defined gates decide.
+     *
+     * Keystone never denies on the Gate's behalf, so a permission named like a
+     * policy ability (in any tenant) cannot override that policy.
+     *
+     * Registering on the same Gate more than once has no further effect.
      */
     public function registerPermissions(Gate $gate): void
     {
-        // Register a single Gate::before callback to handle ALL permission checks
+        if (isset($this->registeredGates[$gate])) {
+            return;
+        }
+
+        $this->registeredGates[$gate] = true;
+
         $gate->before(function ($user, $ability) {
-            // Super-admin bypass - check if user has isSuperAdmin method and it returns true
             if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
                 return true;
             }
 
-            // Check if the ability corresponds to a permission name
-            // This handles permissions created dynamically (e.g., in tests)
-            if (method_exists($user, 'hasPermissionTo')) {
-                // Try to find the permission by name (check without tenant scope)
-                $permission = KeystonePermission::withoutTenant()->where('name', $ability)->first();
-
-                if ($permission) {
-                    // Permission exists - check if user has it
-                    // Return true if they have it, false if they don't
-                    // This prevents the gate from continuing to check policies
-                    return $user->hasPermissionTo($permission) ? true : false;
-                }
+            // The cached name list keeps non-permission abilities (policy
+            // methods, defined gates) from costing a query on every check.
+            if (is_string($ability)
+                && method_exists($user, 'hasPermissionTo')
+                && $this->getAllPermissionNames()->contains($ability)
+                && $user->hasPermissionTo($ability)) {
+                return true;
             }
 
-            // Allow gate to continue checking (will check policies, etc.)
             return null;
         });
     }
@@ -112,9 +126,8 @@ class PermissionRegistrar
     }
 
     /**
-     * Re-register all permissions with the gate.
-     *
-     * Useful after permission changes.
+     * Forget the cached permission list and make sure the Gate callback is
+     * registered on the given Gate.
      */
     public function refresh(Gate $gate): void
     {
@@ -125,11 +138,11 @@ class PermissionRegistrar
     /**
      * Check if a permission exists in the system.
      */
-    public function permissionExists(string $permissionName, string $guardName = 'web'): bool
+    public function permissionExists(string $permissionName, ?string $guardName = null): bool
     {
         return $this->getPermissions()
             ->where('name', $permissionName)
-            ->where('guard_name', $guardName)
+            ->where('guard_name', DefaultGuard::resolve($guardName))
             ->isNotEmpty();
     }
 

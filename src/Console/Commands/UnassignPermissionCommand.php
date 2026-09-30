@@ -3,13 +3,13 @@
 namespace BSPDX\Keystone\Console\Commands;
 
 use BSPDX\Keystone\Console\Commands\Concerns\InteractsWithKeystone;
-use BSPDX\Keystone\Models\KeystoneRole;
+use BSPDX\Keystone\Console\Commands\Concerns\ResolvesTenantOption;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
 use Illuminate\Console\Command;
 
 class UnassignPermissionCommand extends Command
 {
-    use InteractsWithKeystone;
+    use InteractsWithKeystone, ResolvesTenantOption;
 
     protected $signature = 'keystone:unassign-permission
         {permission?* : Permission name(s) to remove}
@@ -17,6 +17,7 @@ class UnassignPermissionCommand extends Command
         {--from-role= : Remove from a role}
         {--from-user= : Remove from a user (ID or email)}
         {--guard= : The guard name}
+        {--tenant= : Tenant UUID to find the role in (multi-tenant only; global roles when omitted)}
         {--all : Remove all permissions from the target}';
 
     protected $description = 'Remove permission(s) from a role or user';
@@ -58,17 +59,16 @@ class UnassignPermissionCommand extends Command
     protected function removeFromRole(string $roleName): int
     {
         $guard = $this->resolveGuard();
+        $tenant = $this->resolveTenant();
 
-        if ($guard === null) {
+        if ($guard === null || $tenant === false) {
             return self::FAILURE;
         }
 
-        $role = KeystoneRole::where('name', $roleName)
-            ->where('guard_name', $guard)
-            ->first();
+        $role = $this->findRole($roleName, $guard, $tenant);
 
         if (! $role) {
-            $this->error("Role '{$roleName}' not found for guard '{$guard}'.");
+            $this->error($this->roleNotFoundMessage($roleName, $guard, $tenant));
 
             return self::FAILURE;
         }
@@ -128,6 +128,10 @@ class UnassignPermissionCommand extends Command
      */
     protected function removeFromUser(string $userIdentifier): int
     {
+        if ($this->option('tenant')) {
+            $this->warn("--tenant is ignored for users; names resolve in the user's own tenant.");
+        }
+
         $user = $this->findUser($userIdentifier);
 
         if (! $user) {

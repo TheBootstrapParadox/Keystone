@@ -141,6 +141,7 @@ class RolePermissionApiTest extends TestCase
         KeystonePermission::create(['name' => 'edit-posts']);
         KeystonePermission::create(['name' => 'publish-posts']);
         $target->givePermissionTo('publish-posts');
+        $caller->givePermissionTo('edit-posts'); // callers may only grant what they hold
 
         $this->actingAs($caller)->postJson("/users/{$target->id}/permissions", ['permissions' => ['edit-posts']])->assertOk();
         $this->assertEqualsCanonicalizing(
@@ -168,6 +169,7 @@ class RolePermissionApiTest extends TestCase
         KeystonePermission::create(['name' => 'view-posts']);
         KeystonePermission::create(['name' => 'edit-posts']);
         $role->givePermissionTo('view-posts');
+        $caller->givePermissionTo('edit-posts'); // callers may only grant what they hold
 
         $this->actingAs($caller)->postJson("/roles/{$role->id}/permissions", ['permissions' => ['edit-posts']])
             ->assertOk()

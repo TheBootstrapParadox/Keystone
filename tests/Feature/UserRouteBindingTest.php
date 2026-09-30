@@ -51,6 +51,9 @@ class UserRouteBindingTest extends TestCase
     public function permissions_are_assigned_to_the_user_in_the_url_not_the_caller()
     {
         [$caller, $target] = User::factory()->count(2)->create();
+        // Callers may only grant what they hold; hold it via a role so the
+        // direct-permission assertion below still tells caller from target.
+        $caller->assignRole(KeystoneRole::create(['name' => 'writer'])->givePermissionTo('edit-posts'));
 
         $this->actingAs($caller)
             ->postJson("/users/{$target->id}/permissions", ['permissions' => ['edit-posts']])

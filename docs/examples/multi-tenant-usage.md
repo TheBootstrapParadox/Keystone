@@ -229,14 +229,14 @@ foreach ($tenantBUsers as $user) {
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use BSPDX\Keystone\Facades\Keystone;
+use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 
 class EmployeeController extends Controller
 {
     public function index(Request $request)
     {
-        // Method 1: Using Keystone facade
-        if (!Keystone::userHasAnyPermission($request->user(), 'view-employees')) {
+        // Method 1: Using the authorization service
+        if (!app(AuthorizationServiceInterface::class)->userHasAnyPermission($request->user(), 'view-employees')) {
             abort(403, 'Unauthorized');
         }
 
@@ -254,7 +254,7 @@ class EmployeeController extends Controller
     public function store(Request $request)
     {
         // Check multiple permissions
-        if (!Keystone::userHasAllPermissions($request->user(), ['create-employees', 'manage-payroll'])) {
+        if (!app(AuthorizationServiceInterface::class)->userHasAllPermissions($request->user(), ['create-employees', 'manage-payroll'])) {
             abort(403, 'You need both create-employees and manage-payroll permissions');
         }
 
@@ -266,15 +266,15 @@ class EmployeeController extends Controller
 ### Example 8: Checking Roles
 
 ```php
-use BSPDX\Keystone\Facades\Keystone;
+use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 
 // Check if user has any of the roles
-if (Keystone::userHasAnyRole($user, ['department_manager', 'hr_representative'])) {
+if (app(AuthorizationServiceInterface::class)->userHasAnyRole($user, ['department_manager', 'hr_representative'])) {
     // User is either a manager or HR rep
 }
 
 // Check if user has all roles
-if (Keystone::userHasAllRoles($user, ['department_manager', 'security_officer'])) {
+if (app(AuthorizationServiceInterface::class)->userHasAllRoles($user, ['department_manager', 'security_officer'])) {
     // User has both roles
 }
 
@@ -292,16 +292,18 @@ if ($role->tenant_id === null) {
 }
 ```
 
-### Example 9: Blade Directives
+### Example 9: Blade
+
+Keystone has no Blade directives of its own. Permissions work with Laravel's `@can` through the Gate integration, and roles can be checked on the user model:
 
 ```blade
-@role('department_manager')
+@if (auth()->user()->hasRole('department_manager'))
     <a href="{{ route('employees.create') }}">Add Employee</a>
-@endrole
+@endif
 
-@hasanyrole('department_manager|hr_representative')
+@if (auth()->user()->hasAnyRole('department_manager', 'hr_representative'))
     <a href="{{ route('payroll.index') }}">Manage Payroll</a>
-@endhasanyrole
+@endif
 
 @can('approve-time-off')
     <button>Approve Request</button>
@@ -318,10 +320,10 @@ if ($role->tenant_id === null) {
 
 ```php
 use BSPDX\Keystone\Models\KeystoneRole;
-use BSPDX\Keystone\Facades\Keystone;
+use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 
 // Check if user can bypass tenant filtering
-if (!Keystone::canBypassPermissions($user)) {
+if (!app(AuthorizationServiceInterface::class)->userCanBypassPermissions($user)) {
     abort(403, 'Super-admin access required');
 }
 
@@ -526,7 +528,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use BSPDX\Keystone\Facades\Keystone;
+use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 
 class EnsureTenantContext
 {
@@ -539,7 +541,7 @@ class EnsureTenantContext
         // Ensure user has a tenant
         if (!auth()->user()->tenant_id) {
             // If user doesn't have a tenant and isn't a super-admin, deny access
-            if (!Keystone::canBypassPermissions(auth()->user())) {
+            if (!app(AuthorizationServiceInterface::class)->userCanBypassPermissions(auth()->user())) {
                 abort(403, 'You must be assigned to an organization');
             }
         }
@@ -555,7 +557,7 @@ class EnsureTenantContext
 namespace App\Http\Controllers\Admin;
 
 use BSPDX\Keystone\Models\KeystoneRole;
-use BSPDX\Keystone\Facades\Keystone;
+use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 use Illuminate\Http\Request;
 
 class RoleController extends Controller
@@ -563,7 +565,7 @@ class RoleController extends Controller
     public function index(Request $request)
     {
         // Regular users see only their tenant's roles + global roles
-        if (!Keystone::canBypassPermissions($request->user())) {
+        if (!app(AuthorizationServiceInterface::class)->userCanBypassPermissions($request->user())) {
             $roles = KeystoneRole::with('permissions')->get();
 
             return view('admin.roles.index', [
@@ -600,7 +602,7 @@ class RoleController extends Controller
 use BSPDX\Keystone\Services\RoleService;
 
 $roleService = app(RoleService::class);
-$role = $roleService->create(['name' => 'manager', 'title' => 'Manager']);
+$role = $roleService->create('manager');
 
 // Avoid: Direct model manipulation for complex operations
 $role = new KeystoneRole();
@@ -661,7 +663,7 @@ Cache::forget("tenant.{$tenantId}.roles");
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
-use BSPDX\Keystone\Facades\Keystone;
+use BSPDX\Keystone\Services\Contracts\AuthorizationServiceInterface;
 
 class UpdateRoleRequest extends FormRequest
 {
@@ -670,7 +672,7 @@ class UpdateRoleRequest extends FormRequest
         $role = $this->route('role');
 
         // Ensure user can manage this role
-        if (Keystone::canBypassPermissions($this->user())) {
+        if (app(AuthorizationServiceInterface::class)->userCanBypassPermissions($this->user())) {
             return true;  // Super-admin can manage any role
         }
 
@@ -739,6 +741,5 @@ class MultiTenantRoleTest extends TestCase
 ## Next Steps
 
 - [Multi-Tenancy Documentation](../multi-tenancy.md) - Architecture details
-- [Role and Permission Management](../roles-and-permissions.md) - Advanced role features
-- [Service Layer](../services.md) - Working with Keystone services
-- [Testing Guide](../testing.md) - How to test multi-tenant features
+- [User Model](../USER_MODEL.md) - Adding Keystone to your User model
+- [README](../../README.md) - Services, middleware, and the management API

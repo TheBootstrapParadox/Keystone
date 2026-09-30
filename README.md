@@ -12,7 +12,7 @@ passkeys (Fortify, Breeze, or anything else); Keystone plugs in via a single tra
 -   👥 **Role-Based Access Control (RBAC)** - Clean service layer API
 -   🏢 **Multi-Tenancy Ready** - Optional, global-scope tenant isolation
 -   🚪 **Laravel Gate Integration** - Permissions registered via `Gate::before()`
--   🌐 **API-First Design** - JSON role/permission management API included
+-   🌐 **API-First Design** - JSON role/permission management API included, with no-escalation rules built in
 -   🔌 **Framework-Agnostic Auth** - Works alongside any authentication stack
 
 ## Table of Contents
@@ -55,7 +55,7 @@ php artisan vendor:publish --tag=keystone-config --tag=keystone-migrations
 # Optional: example RBAC API routes
 php artisan vendor:publish --tag=keystone-routes
 
-# Optional: demo roles/permissions/users seeder
+# Optional: baseline roles/permissions seeder, plus a demo-user seeder
 php artisan vendor:publish --tag=keystone-seeders
 ```
 
@@ -66,7 +66,11 @@ php artisan migrate
 ```
 
 This creates tables for roles and permissions (custom RBAC), and — if `KEYSTONE_MULTI_TENANT`
-is enabled — a `tenant_id` column on your users table and on the role/permission pivot tables.
+is enabled — a `tenant_id` column on your users table, the roles and permissions tables, and the
+role/permission pivot tables.
+
+Decide on multi-tenancy before you first migrate. To enable it later on an existing install, run
+`php artisan keystone:enable-multi-tenancy` (see [Multi-Tenancy](#multi-tenancy)).
 
 ### Step 4: Seed Demo Data (Optional)
 
@@ -75,7 +79,12 @@ php artisan db:seed --class=KeystoneSeeder
 ```
 
 This creates 4 default roles (`super-admin`, `admin`, `editor`, `user`) with common
-permissions, and 4 demo users assigned to them.
+permissions. For local development you can also create one demo user per role (password
+`password`). That seeder refuses to run in production:
+
+```bash
+php artisan db:seed --class=KeystoneDemoUserSeeder
+```
 
 ### Step 5: Set Up Your Own Authentication
 
@@ -105,7 +114,7 @@ Spatie's teams feature).
 - **Automatic Filtering** - Authenticated users only see roles/permissions for their tenant
 - **Global Roles/Permissions** - Set `tenant_id = NULL` for cross-tenant access
 - **UUID Support** - `tenant_id` is always a UUID column
-- **Super-Admin Bypass** - Use `::withoutTenant()` for cross-tenant operations
+- **Cross-Tenant Queries** - Use `::withoutTenant()` for cross-tenant operations
 
 See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architecture, usage
 examples, and migration guides.
@@ -118,9 +127,16 @@ examples, and migration guides.
     'cache_expiration' => 60 * 60 * 24, // 24 hours
 
     // Super admin role that bypasses all permission checks
+    // (in multi-tenant mode it must be a global role; the name is reserved in tenants)
     'super_admin_role' => 'super-admin',
 ],
 ```
+
+### Guards
+
+Whenever you don't pass a guard, Keystone uses your application's default guard
+(`auth.defaults.guard`) — when creating roles and permissions, checking them, and resolving
+names. Pass a guard explicitly (`$user->hasPermissionTo('edit-posts', 'api')`) to use another.
 
 ## Usage
 
@@ -211,6 +227,10 @@ class AdminController extends Controller
 
 Keystone doesn't auto-register routes. Add them manually from the published examples:
 
+Alternatively, set `keystone.load_routes` to `true` to have Keystone load the management API
+routes itself (unless you've published `routes/keystone-api.php`). The web routes are examples
+only and are never loaded automatically.
+
 **Web Routes** (`routes/keystone-web.php`):
 
 ```php
@@ -227,13 +247,17 @@ require __DIR__.'/keystone-api.php';
 
 ### Middleware
 
-Keystone registers three middleware aliases:
+Keystone registers these middleware aliases:
 
 | Alias | Purpose |
 | --- | --- |
-| `role:<role>` | Require one of the listed roles (OR logic) |
-| `permission:<perm>` | Require one of the listed permissions (OR logic) |
-| `keystone.feature:<name>` | Return `404` if the named feature flag is disabled |
+| `keystone.role:<role>` | Require one of the listed roles (OR logic) |
+| `keystone.permission:<perm>` | Require one of the listed permissions (OR logic) |
+| `role:<role>` | Same as `keystone.role` — registered only if your app hasn't defined a `role` alias |
+| `permission:<perm>` | Same as `keystone.permission` — registered only if your app hasn't defined a `permission` alias |
+
+Super-admins pass both. Unauthenticated requests raise Laravel's `AuthenticationException`, so
+your app's own guest handling applies (401 for JSON, redirect for browsers).
 
 #### Role Middleware
 
@@ -258,16 +282,6 @@ Route::middleware(['auth', 'permission:edit-posts'])->group(function () {
 // Multiple permissions
 Route::middleware(['auth', 'permission:edit-posts,publish-posts'])->group(function () {
     // Users with either permission can access
-});
-```
-
-#### Feature Flag Middleware
-
-Gate routes behind a `keystone.features.*` flag. Requests to a disabled feature return `404`.
-
-```php
-Route::middleware(['auth', 'keystone.feature:multi_tenant'])->group(function () {
-    // Only reachable when 'multi_tenant' is enabled in config
 });
 ```
 
@@ -297,12 +311,16 @@ if (auth()->user()->isSuperAdmin()) {
 }
 ```
 
-> **Super-admins and role checks:** super-admins pass every *permission* check (`hasPermissionTo()`,
-> `can()`, the `permission:` middleware) and the `role:` middleware, but `hasRole()` /
-> `hasAnyRole()` / `hasAllRoles()` are literal. A super-admin only "has" the roles actually
-> assigned to them. Use `isSuperAdmin()` or a permission check when you mean "may do anything".
+> **Super-admins and literal checks:** super-admins pass every *permission* check
+> (`hasPermissionTo()`, `can()`, the `permission:` middleware) and the `role:` middleware, but
+> `hasRole()` / `hasAnyRole()` / `hasAllRoles()` and `hasDirectPermission()` are literal. A
+> super-admin only "has" the roles and direct permissions actually assigned to them. Use
+> `isSuperAdmin()` or a permission check when you mean "may do anything".
 
-> **Note:** `can()` and Laravel's `Gate` rely on Keystone registering permissions in `KeystoneServiceProvider::registerPermissionsWithGate()`, which is skipped when running in the console (e.g. `php artisan tinker`) to avoid registration during install/migration — it still runs normally during HTTP requests and the test suite. If you're debugging permissions in `tinker` and `can()` always returns `false`, this is why; use `hasPermissionTo()` / `hasRole()` directly instead, which don't depend on Gate registration.
+> **Gate integration:** Keystone adds one `Gate::before` callback, in every context (HTTP, queue
+> workers, the scheduler, tinker). It returns `true` for super-admins and for permissions the
+> user holds, and otherwise returns `null` — so your policies and `Gate::define` abilities still
+> decide. Keystone never denies on the Gate's behalf.
 
 #### Service Layer Approach (Recommended for Controllers)
 
@@ -356,18 +374,30 @@ curl -X PUT http://localhost/api/users/1/roles \
 The same `POST` adds / `PUT` replaces pattern applies to `/api/users/{user}/permissions` and
 `/api/roles/{role}/permissions`.
 
+#### API Security Rules
+
+- **No privilege escalation.** A caller who isn't a super-admin can only grant a role if they hold
+  every permission it grants, and only grant (or add to a role) permissions they hold. Only a
+  super-admin can grant, remove, or modify the super-admin role. Violations return `403` and
+  change nothing. The trait, services, and console commands are not restricted.
+- **Global rows are read-only for tenants.** In multi-tenant mode, a caller who belongs to a tenant
+  gets `403` when deleting or changing the permissions of a global role or permission.
+- **Tenant-aware names.** Names must be unique within the caller's tenant (and guard), and names
+  sent to assignment endpoints must exist in the target's tenant (otherwise `422`).
+
 ## Architecture
 
 ### Service Layer
 
-All role and permission operations go through dedicated services:
+All role and permission operations go through dedicated services. A `null` guard always means
+your default guard.
 
 - **RoleService** - Role CRUD and queries
-  - `getAllWithPermissions()`, `create()`, `delete()`, `syncPermissions()`
+  - `getAllWithPermissions()`, `create($name, ?$guard)`, `delete($role)`, `syncPermissions($role, $permissions)`, `getUserRoles($user)`, `findByName($name, ?$guard, ?$tenantId)`, `getAllForTenant(?$tenantId)`, `assignToUser()`, `removeFromUser()`, `clearCache()`
 - **PermissionService** - Permission CRUD and queries
-  - `getAllWithRoles()`, `create()`, `delete()`, `syncToUser()`
+  - `getAllWithRoles()`, `create($name, ?$guard)`, `delete($permission)`, `syncToUser()`, `getUserPermissions()`, `getAllUserPermissions()`, `findByName()`, `getAllForTenant()`, `assignToUser()`, `removeFromUser()`, `assignToRole()`, `removeFromRole()`
 - **AuthorizationService** - High-level authorization operations
-  - `assignRolesToUser()`, `assignPermissionsToUser()` (add), `syncRolesForUser()`, `syncPermissionsForUser()` (replace), `userHasRole()`, `userHasPermission()`
+  - `assignRolesToUser()`, `assignPermissionsToUser()` (add), `syncRolesForUser()`, `syncPermissionsForUser()` (replace), `userHasRole()`, `userHasAnyRole()`, `userHasAllRoles()`, `userHasPermission()`, `userHasAnyPermission()`, `userHasAllPermissions()`, `userHasDirectPermission()`, `userCanBypassPermissions()` — all with the super-admin bypass applied
 
 All services are registered in Laravel's service container with interface bindings and
 convenient aliases:
@@ -380,6 +410,17 @@ convenient aliases:
 
 - `BSPDX\Keystone\Models\KeystoneRole` - Custom role model with tenant scoping and `isSuperAdmin()`
 - `BSPDX\Keystone\Models\KeystonePermission` - Custom permission model with tenant scoping
+
+Assignment methods accept names, integer IDs, models, or arrays of these. Deleting a user
+removes their assignments (soft-deleted users keep them until force-deleted).
+
+### Exceptions
+
+All extend `BSPDX\Keystone\Exceptions\KeystoneException`:
+
+- `CannotDeleteSuperAdminRole` - deleting the super-admin role
+- `ReservedRoleName` - using the super-admin name for a tenant role (multi-tenant)
+- `RoleAlreadyExists` / `PermissionAlreadyExists` - a duplicate name, guard, and tenant (multi-tenant)
 
 ### Benefits
 
@@ -401,10 +442,17 @@ permission queries.
 
 ### Quick Start
 
-Enable multi-tenancy in your `.env`:
+Enable multi-tenancy in your `.env` before running Keystone's migrations:
 
 ```env
 KEYSTONE_MULTI_TENANT=true
+```
+
+Already migrated in single-tenant mode? Enable it, then upgrade the schema (existing roles and
+permissions become global):
+
+```bash
+php artisan keystone:enable-multi-tenancy
 ```
 
 ### Features
@@ -413,7 +461,8 @@ KEYSTONE_MULTI_TENANT=true
 - **Global Roles/Permissions** - Set `tenant_id = NULL` to make roles/permissions accessible across all tenants
 - **Tenant-Specific Roles** - Roles with `tenant_id` are isolated to a single organization
 - **UUID Support** - `tenant_id` is always a UUID column
-- **Super-Admin Bypass** - Use `::withoutTenant()` scope for cross-tenant operations
+- **Cross-Tenant Queries** - Use `::withoutTenant()` scope for cross-tenant operations
+- **Global Super-Admin** - Only a global role can be the super-admin role; its name is reserved in tenants
 
 ### Usage Examples
 
@@ -471,15 +520,23 @@ if ($user->canBypassPermissions()) {
 ### Keystone Management Commands
 
 ```bash
-# Create roles and permissions
-php artisan keystone:make-role manager
+# Create roles and permissions (--tenant creates them in a tenant; global when omitted)
+php artisan keystone:make-role manager --permissions=view-posts,edit-posts
 php artisan keystone:make-permission edit-posts
+php artisan keystone:make-role manager --tenant=019c17d6-1a87-71be-a6a4-718da52579e9
 
-# Assign and remove roles/permissions
-php artisan keystone:assign-role admin --user={user_id}
-php artisan keystone:unassign-role admin --user={user_id}
-php artisan keystone:assign-permission edit-posts --role=editor
-php artisan keystone:unassign-permission edit-posts --role=editor
+# Assign and remove roles (user by ID or email)
+php artisan keystone:assign-role jane@example.com admin
+php artisan keystone:assign-role 42 editor --sync
+php artisan keystone:unassign-role 42 admin
+
+# Assign and remove permissions (--tenant picks which tenant's role to target)
+php artisan keystone:assign-permission edit-posts --to-role=editor
+php artisan keystone:assign-permission edit-posts --to-user=42
+php artisan keystone:unassign-permission edit-posts --from-role=editor --tenant=019c17d6-1a87-71be-a6a4-718da52579e9
+
+# Upgrade a single-tenant schema after enabling multi-tenancy
+php artisan keystone:enable-multi-tenancy
 ```
 
 ### Learn More
@@ -493,7 +550,8 @@ For comprehensive documentation on multi-tenancy:
 Run the package tests:
 
 ```bash
-composer test
+composer test                # multi-tenant suite
+composer test-single-tenant  # single-tenant suite
 ```
 
 Or with PHPUnit directly:
@@ -504,7 +562,7 @@ Or with PHPUnit directly:
 
 ## Security
 
-If you discover any security issues, please email info@bspdx.com instead of using the issue tracker.
+See [API Security Rules](#api-security-rules). If you discover any security issues, please email info@bspdx.com instead of using the issue tracker.
 
 ## Credits
 

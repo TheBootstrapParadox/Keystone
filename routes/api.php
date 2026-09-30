@@ -1,6 +1,7 @@
 <?php
 
 use BSPDX\Keystone\Http\Controllers\RolePermissionController;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,10 +16,14 @@ use Illuminate\Support\Facades\Route;
 | the most common choice. Protect this group with whatever auth guard
 | your application actually uses.
 |
+| SubstituteBindings is listed explicitly so {role} and {permission} resolve
+| to models even when Keystone loads this file itself (keystone.load_routes)
+| outside any middleware group. It is harmless inside your 'api' group.
+|
 */
 
 // Role & Permission Management API
-Route::middleware(['auth'])->prefix('api')->group(function () {
+Route::middleware(['auth', SubstituteBindings::class])->prefix('api')->group(function () {
     // View roles and permissions
     Route::get('/roles', [RolePermissionController::class, 'roles'])
         ->middleware('permission:view-roles')

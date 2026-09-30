@@ -3,16 +3,19 @@
 namespace BSPDX\Keystone\Console\Commands;
 
 use BSPDX\Keystone\Console\Commands\Concerns\InteractsWithKeystone;
+use BSPDX\Keystone\Console\Commands\Concerns\ResolvesTenantOption;
+use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
 use Illuminate\Console\Command;
 
 class MakePermissionCommand extends Command
 {
-    use InteractsWithKeystone;
+    use InteractsWithKeystone, ResolvesTenantOption;
 
     protected $signature = 'keystone:make-permission
         {name : The name of the permission}
-        {--guard= : The guard name (defaults to config default)}';
+        {--guard= : The guard name (defaults to config default)}
+        {--tenant= : Tenant UUID to create the permission in (multi-tenant only; global when omitted)}';
 
     protected $description = 'Create a new permission';
 
@@ -27,12 +30,16 @@ class MakePermissionCommand extends Command
         $name = $this->argument('name');
         $guard = $this->resolveGuard();
 
-        if ($guard === null) {
+        $tenant = $this->resolveTenant();
+
+        if ($guard === null || $tenant === false) {
             return self::FAILURE;
         }
 
         try {
-            $permission = $this->permissionService->create($name, $guard);
+            $permission = $tenant === null
+                ? $this->permissionService->create($name, $guard)
+                : KeystonePermission::create(['name' => $name, 'guard_name' => $guard, 'tenant_id' => $tenant]);
 
             $this->clearPermissionCache();
 

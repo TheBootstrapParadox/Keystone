@@ -2,17 +2,18 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\PermissionRegistrar;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 class KeystoneSeeder extends Seeder
 {
     /**
      * Run the database seeds.
+     *
+     * Creates the baseline permissions and roles only. Demo users live in
+     * KeystoneDemoUserSeeder so they are never created by accident.
      */
     public function run(): void
     {
@@ -121,71 +122,6 @@ class KeystoneSeeder extends Seeder
             'view-posts',
         ]);
 
-        // Create demo users
-        $this->createDemoUsers($superAdmin, $admin, $editor, $user);
-
-        $this->command->info('Keystone roles, permissions, and demo users created successfully!');
-    }
-
-    /**
-     * Create demo users for each role.
-     */
-    protected function createDemoUsers($superAdmin, $admin, $editor, $user): void
-    {
-        // Resolve User class from config
-        $userClass = config('keystone.user.model')
-            ?? config('auth.providers.users.model', User::class);
-
-        // Super Admin user
-        $superAdminUser = $userClass::firstOrCreate(
-            ['email' => 'superadmin@example.com'],
-            [
-                'name' => 'Super Admin',
-                'password' => Hash::make('password'),
-                'email_verified_at' => now(),
-            ]
-        );
-        $superAdminUser->assignRole($superAdmin);
-
-        // Admin user
-        $adminUser = $userClass::firstOrCreate(
-            ['email' => 'admin@example.com'],
-            [
-                'name' => 'Admin User',
-                'password' => Hash::make('password'),
-                'email_verified_at' => now(),
-            ]
-        );
-        $adminUser->assignRole($admin);
-
-        // Editor user
-        $editorUser = $userClass::firstOrCreate(
-            ['email' => 'editor@example.com'],
-            [
-                'name' => 'Editor User',
-                'password' => Hash::make('password'),
-                'email_verified_at' => now(),
-            ]
-        );
-        $editorUser->assignRole($editor);
-
-        // Regular user
-        $regularUser = $userClass::firstOrCreate(
-            ['email' => 'user@example.com'],
-            [
-                'name' => 'Regular User',
-                'password' => Hash::make('password'),
-                'email_verified_at' => now(),
-            ]
-        );
-        $regularUser->assignRole($user);
-
-        $this->command->info('');
-        $this->command->info('Demo users created:');
-        $this->command->info('Super Admin: superadmin@example.com / password');
-        $this->command->info('Admin: admin@example.com / password');
-        $this->command->info('Editor: editor@example.com / password');
-        $this->command->info('User: user@example.com / password');
-        $this->command->info('');
+        $this->command?->info('Keystone roles and permissions created successfully!');
     }
 }
