@@ -14,15 +14,18 @@ abstract class TestCase extends BaseTestCase
     /**
      * The parameters that should be used when running "migrate:fresh".
      *
-     * Use only test-specific migrations which include both the base
-     * users table and copies of the package migrations.
+     * Run a test-only users table migration followed by the package's real
+     * migrations, so the suites exercise exactly what Keystone ships.
      *
      * @return array
      */
     protected function migrateFreshUsing()
     {
         return array_merge($this->baseMigrateFreshUsing(), [
-            '--path' => realpath(__DIR__.'/database/migrations'),
+            '--path' => [
+                realpath(__DIR__.'/database/migrations'),
+                realpath(__DIR__.'/../database/migrations'),
+            ],
             '--realpath' => true,
         ]);
     }

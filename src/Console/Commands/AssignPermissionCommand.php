@@ -3,14 +3,14 @@
 namespace BSPDX\Keystone\Console\Commands;
 
 use BSPDX\Keystone\Console\Commands\Concerns\InteractsWithKeystone;
-use BSPDX\Keystone\Models\KeystoneRole;
+use BSPDX\Keystone\Console\Commands\Concerns\ResolvesTenantOption;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
 use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
 use Illuminate\Console\Command;
 
 class AssignPermissionCommand extends Command
 {
-    use InteractsWithKeystone;
+    use InteractsWithKeystone, ResolvesTenantOption;
 
     protected $signature = 'keystone:assign-permission
         {permission?* : Permission name(s) to assign}
@@ -18,6 +18,7 @@ class AssignPermissionCommand extends Command
         {--to-role= : Assign to a role}
         {--to-user= : Assign directly to a user (ID or email)}
         {--guard= : The guard name}
+        {--tenant= : Tenant UUID to find the role in (multi-tenant only; global roles when omitted)}
         {--sync : Replace existing permissions instead of adding}
         {--remove : Remove the specified permissions instead of adding}';
 
@@ -70,17 +71,16 @@ class AssignPermissionCommand extends Command
     protected function assignToRole(string $roleName, array $permissions): int
     {
         $guard = $this->resolveGuard();
+        $tenant = $this->resolveTenant();
 
-        if ($guard === null) {
+        if ($guard === null || $tenant === false) {
             return self::FAILURE;
         }
 
-        $role = KeystoneRole::where('name', $roleName)
-            ->where('guard_name', $guard)
-            ->first();
+        $role = $this->findRole($roleName, $guard, $tenant);
 
         if (! $role) {
-            $this->error("Role '{$roleName}' not found for guard '{$guard}'.");
+            $this->error($this->roleNotFoundMessage($roleName, $guard, $tenant));
 
             return self::FAILURE;
         }
@@ -131,6 +131,10 @@ class AssignPermissionCommand extends Command
      */
     protected function assignToUser(string $userIdentifier, array $permissions): int
     {
+        if ($this->option('tenant')) {
+            $this->warn("--tenant is ignored for users; names resolve in the user's own tenant.");
+        }
+
         $user = $this->findUser($userIdentifier);
 
         if (! $user) {

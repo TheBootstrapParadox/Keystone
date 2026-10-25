@@ -3,16 +3,19 @@
 namespace BSPDX\Keystone\Console\Commands;
 
 use BSPDX\Keystone\Console\Commands\Concerns\InteractsWithKeystone;
+use BSPDX\Keystone\Console\Commands\Concerns\ResolvesTenantOption;
+use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
 use Illuminate\Console\Command;
 
 class MakeRoleCommand extends Command
 {
-    use InteractsWithKeystone;
+    use InteractsWithKeystone, ResolvesTenantOption;
 
     protected $signature = 'keystone:make-role
         {name : The name of the role}
         {--guard= : The guard name (defaults to config default)}
+        {--tenant= : Tenant UUID to create the role in (multi-tenant only; global when omitted)}
         {--permissions= : Comma-separated list of permissions to assign}
         {--P|permission=* : Permission(s) to assign (can be used multiple times)}';
 
@@ -29,12 +32,16 @@ class MakeRoleCommand extends Command
         $name = $this->argument('name');
         $guard = $this->resolveGuard();
 
-        if ($guard === null) {
+        $tenant = $this->resolveTenant();
+
+        if ($guard === null || $tenant === false) {
             return self::FAILURE;
         }
 
         try {
-            $role = $this->roleService->create($name, $guard);
+            $role = $tenant === null
+                ? $this->roleService->create($name, $guard)
+                : KeystoneRole::create(['name' => $name, 'guard_name' => $guard, 'tenant_id' => $tenant]);
 
             // Gather permissions from both options
             $permissions = $this->gatherPermissions();

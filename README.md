@@ -10,9 +10,9 @@ has — it does not provide authentication. Bring your own login, registration, 
 passkeys (Fortify, Breeze, or anything else); Keystone plugs in via a single trait.
 
 -   👥 **Role-Based Access Control (RBAC)** - Clean service layer API
--   🏢 **Multi-Tenancy Ready** - Optional, global-scope tenant isolation
+-   🏢 **Multi-Tenancy Ready** - Optional, global-scope tenant isolation; one schema in both modes, so you can switch it on or off without a migration
 -   🚪 **Laravel Gate Integration** - Permissions registered via `Gate::before()`
--   🌐 **API-First Design** - JSON role/permission management API included
+-   🌐 **API-First Design** - JSON role/permission management API included, with no-escalation rules built in
 -   🔌 **Framework-Agnostic Auth** - Works alongside any authentication stack
 
 ## Table of Contents
@@ -29,6 +29,7 @@ passkeys (Fortify, Breeze, or anything else); Keystone plugs in via a single tra
     -   [API Usage](#api-usage)
 -   [Architecture](#architecture)
 -   [Multi-Tenancy](#multi-tenancy)
+-   [Known Issues](#known-issues)
 -   [Testing](#testing)
 -   [Credits](#credits)
 -   [License](#license)
@@ -36,7 +37,7 @@ passkeys (Fortify, Breeze, or anything else); Keystone plugs in via a single tra
 ## Requirements
 
 -   PHP 8.2+
--   Laravel 12.x or 13.x
+-   Laravel 12.41+ or 13.x
 -   MySQL 5.7+ / PostgreSQL 9.6+ / SQLite 3.8.8+
 
 ## Installation
@@ -55,7 +56,7 @@ php artisan vendor:publish --tag=keystone-config --tag=keystone-migrations
 # Optional: example RBAC API routes
 php artisan vendor:publish --tag=keystone-routes
 
-# Optional: demo roles/permissions/users seeder
+# Optional: baseline roles/permissions seeder, plus a demo-user seeder
 php artisan vendor:publish --tag=keystone-seeders
 ```
 
@@ -65,8 +66,11 @@ php artisan vendor:publish --tag=keystone-seeders
 php artisan migrate
 ```
 
-This creates tables for roles and permissions (custom RBAC), and — if `KEYSTONE_MULTI_TENANT`
-is enabled — a `tenant_id` column on your users table and on the role/permission pivot tables.
+This creates tables for roles and permissions (custom RBAC) and adds a nullable `tenant_id`
+column to your users table. The schema is the same whether `KEYSTONE_MULTI_TENANT` is on or off:
+the roles, permissions, and assignment tables always carry `tenant_id`, and in single-tenant mode
+it stays NULL. You can turn multi-tenancy on or off later without a migration (see
+[Multi-Tenancy](#multi-tenancy)).
 
 ### Step 4: Seed Demo Data (Optional)
 
@@ -75,14 +79,19 @@ php artisan db:seed --class=KeystoneSeeder
 ```
 
 This creates 4 default roles (`super-admin`, `admin`, `editor`, `user`) with common
-permissions, and 4 demo users assigned to them.
+permissions. For local development you can also create one demo user per role (password
+`password`). That seeder refuses to run in production:
+
+```bash
+php artisan db:seed --class=KeystoneDemoUserSeeder
+```
 
 ### Step 5: Set Up Your Own Authentication
 
 Keystone does not configure or require any authentication package. Install and configure
 `laravel/fortify` (or Breeze, or your own solution) exactly as you would in a Keystone-free
-Laravel app. Keystone only needs your User model to exist and to use the `HasKeystone` trait
-(see below) — it has no opinion on how users log in.
+Laravel app. Keystone only needs your User model to implement `KeystoneUser` and use the
+`HasKeystone` trait (see below) — it has no opinion on how users log in.
 
 ## Configuration
 
@@ -92,20 +101,20 @@ The package configuration is located at `config/keystone.php`.
 
 ```php
 'features' => [
-    // Enable multi-tenant mode (adds tenant_id column to users, roles, and permissions tables)
+    // Enable multi-tenant mode (scopes roles, permissions, and assignments by tenant_id)
     'multi_tenant' => env('KEYSTONE_MULTI_TENANT', false),
 ],
 ```
 
-When `multi_tenant` is enabled, Keystone adds a nullable `tenant_id` column to users, roles,
-permissions, and pivot tables, and uses **global scopes** for automatic tenant isolation (not
-Spatie's teams feature).
+The `tenant_id` columns exist in both modes. When `multi_tenant` is enabled, Keystone writes and
+filters by them, using **global scopes** for automatic tenant isolation (not Spatie's teams
+feature). When it's disabled, Keystone ignores them.
 
 **Key Features:**
 - **Automatic Filtering** - Authenticated users only see roles/permissions for their tenant
 - **Global Roles/Permissions** - Set `tenant_id = NULL` for cross-tenant access
 - **UUID Support** - `tenant_id` is always a UUID column
-- **Super-Admin Bypass** - Use `::withoutTenant()` for cross-tenant operations
+- **Cross-Tenant Queries** - Use `::withoutTenant()` for cross-tenant operations
 
 See [Multi-Tenancy Documentation](docs/multi-tenancy.md) for detailed architecture, usage
 examples, and migration guides.
@@ -118,28 +127,37 @@ examples, and migration guides.
     'cache_expiration' => 60 * 60 * 24, // 24 hours
 
     // Super admin role that bypasses all permission checks
+    // (in multi-tenant mode it must be a global role; the name is reserved in tenants)
     'super_admin_role' => 'super-admin',
 ],
 ```
+
+### Guards
+
+Whenever you don't pass a guard, Keystone uses your application's default guard
+(`auth.defaults.guard`) — when creating roles and permissions, checking them, and resolving
+names. Pass a guard explicitly (`$user->hasPermissionTo('edit-posts', 'api')`) to use another.
 
 ## Usage
 
 ### Adding RBAC to Your User Model
 
-Add the `HasKeystone` trait to your existing `User` model — this is Keystone's only
-integration point. It adds role/permission relationships and tenant-aware scoping; it does not
-touch authentication.
+Add the `KeystoneUser` interface and the `HasKeystone` trait to your existing `User` model —
+this is Keystone's only integration point. The trait implements every method the interface
+declares and adds role/permission relationships and tenant-aware scoping; it does not touch
+authentication.
 
 ```php
 <?php
 
 namespace App\Models;
 
+use BSPDX\Keystone\Contracts\KeystoneUser;
+use BSPDX\Keystone\Traits\HasKeystone;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use BSPDX\Keystone\Traits\HasKeystone;
 
-class User extends Authenticatable
+class User extends Authenticatable implements KeystoneUser
 {
     use Notifiable, HasKeystone;
 
@@ -150,6 +168,11 @@ class User extends Authenticatable
     // ... rest of your model
 }
 ```
+
+Keystone resolves your user model from `keystone.user.model`, then `auth.providers.users.model`,
+and throws a clear `LogicException` if neither is set or the model doesn't implement
+`KeystoneUser`. Any other model (for example an `Admin` model on another guard) can hold roles
+the same way by declaring `implements KeystoneUser` and `use HasKeystone;`.
 
 You can also query users by assigned role directly from the model:
 
@@ -211,6 +234,10 @@ class AdminController extends Controller
 
 Keystone doesn't auto-register routes. Add them manually from the published examples:
 
+Alternatively, set `keystone.load_routes` to `true` to have Keystone load the management API
+routes itself (unless you've published `routes/keystone-api.php`). The web routes are examples
+only and are never loaded automatically.
+
 **Web Routes** (`routes/keystone-web.php`):
 
 ```php
@@ -227,13 +254,18 @@ require __DIR__.'/keystone-api.php';
 
 ### Middleware
 
-Keystone registers three middleware aliases:
+Keystone registers these middleware aliases:
 
 | Alias | Purpose |
 | --- | --- |
-| `role:<role>` | Require one of the listed roles (OR logic) |
-| `permission:<perm>` | Require one of the listed permissions (OR logic) |
-| `keystone.feature:<name>` | Return `404` if the named feature flag is disabled |
+| `keystone.role:<role>` | Require one of the listed roles (OR logic) |
+| `keystone.permission:<perm>` | Require one of the listed permissions (OR logic) |
+| `role:<role>` | Same as `keystone.role` — registered only if your app hasn't defined a `role` alias |
+| `permission:<perm>` | Same as `keystone.permission` — registered only if your app hasn't defined a `permission` alias |
+
+Super-admins pass both. Unauthenticated requests raise Laravel's `AuthenticationException`, so
+your app's own guest handling applies (401 for JSON, redirect for browsers). An authenticated
+user whose model doesn't implement `KeystoneUser` (for example another guard's model) gets 403.
 
 #### Role Middleware
 
@@ -258,16 +290,6 @@ Route::middleware(['auth', 'permission:edit-posts'])->group(function () {
 // Multiple permissions
 Route::middleware(['auth', 'permission:edit-posts,publish-posts'])->group(function () {
     // Users with either permission can access
-});
-```
-
-#### Feature Flag Middleware
-
-Gate routes behind a `keystone.features.*` flag. Requests to a disabled feature return `404`.
-
-```php
-Route::middleware(['auth', 'keystone.feature:multi_tenant'])->group(function () {
-    // Only reachable when 'multi_tenant' is enabled in config
 });
 ```
 
@@ -297,12 +319,18 @@ if (auth()->user()->isSuperAdmin()) {
 }
 ```
 
-> **Super-admins and role checks:** super-admins pass every *permission* check (`hasPermissionTo()`,
-> `can()`, the `permission:` middleware) and the `role:` middleware, but `hasRole()` /
-> `hasAnyRole()` / `hasAllRoles()` are literal. A super-admin only "has" the roles actually
-> assigned to them. Use `isSuperAdmin()` or a permission check when you mean "may do anything".
+> **Super-admins and literal checks:** super-admins pass every *permission* check
+> (`hasPermissionTo()`, `can()`, the `permission:` middleware) and the `role:` middleware, but
+> `hasRole()` / `hasAnyRole()` / `hasAllRoles()` and `hasDirectPermission()` are literal. A
+> super-admin only "has" the roles and direct permissions actually assigned to them. Use
+> `isSuperAdmin()` or a permission check when you mean "may do anything".
 
-> **Note:** `can()` and Laravel's `Gate` rely on Keystone registering permissions in `KeystoneServiceProvider::registerPermissionsWithGate()`, which is skipped when running in the console (e.g. `php artisan tinker`) to avoid registration during install/migration — it still runs normally during HTTP requests and the test suite. If you're debugging permissions in `tinker` and `can()` always returns `false`, this is why; use `hasPermissionTo()` / `hasRole()` directly instead, which don't depend on Gate registration.
+> **Gate integration:** Keystone adds one `Gate::before` callback, in every context (HTTP, queue
+> workers, the scheduler, tinker). It returns `true` for super-admins and for permissions the
+> user holds, and otherwise returns `null` — so your policies and `Gate::define` abilities still
+> decide. Keystone never denies on the Gate's behalf, and users whose model doesn't implement
+> `KeystoneUser` are left to your policies. The permission list is read from the cache store at
+> most once per request or job (`Cache::memo()`).
 
 #### Service Layer Approach (Recommended for Controllers)
 
@@ -356,18 +384,48 @@ curl -X PUT http://localhost/api/users/1/roles \
 The same `POST` adds / `PUT` replaces pattern applies to `/api/users/{user}/permissions` and
 `/api/roles/{role}/permissions`.
 
+**Response shapes.** Every role in a response is `{id, name, guard_name, title, description,
+permissions, created_at}`, where `permissions` is an array of names, and every permission is
+`{id, name, guard_name, title, description, created_at}`. `created_at` is ISO 8601 (or `null`).
+`GET /api/roles` adds `users_count` to each role, and `GET /api/permissions` adds `roles` (names).
+
+**Listing.** `GET /api/roles` and `GET /api/permissions` are ordered by name. Pass `per_page`
+(1–100) and optionally `page` to get one page plus a `meta` object (`current_page`, `per_page`,
+`last_page`, `total`); without `per_page` the whole list is returned.
+
+**Limits.** `roles` / `permissions` arrays accept at most 100 distinct names (`422` otherwise).
+The example route group applies `throttle:60,1`; adjust it to your needs.
+
+**Errors.** Keystone's exceptions render as JSON client errors: `409` for a duplicate role or
+permission, `422` for the reserved super-admin name, `403` for deleting the super-admin role.
+They aren't reported to your error log. Any other exception is left to your app's handler.
+
+#### API Security Rules
+
+- **No privilege escalation.** A caller who isn't a super-admin can only grant a role if they hold
+  every permission it grants, and only grant (or add to a role) permissions they hold. Only a
+  super-admin can grant, remove, or modify the super-admin role. Violations return `403` and
+  change nothing. The trait, services, and console commands are not restricted.
+- **Global rows are read-only for tenants.** In multi-tenant mode, a caller who belongs to a tenant
+  gets `403` when deleting or changing the permissions of a global role or permission.
+- **Tenant-aware names.** Names must be unique within the caller's tenant (and guard), and names
+  sent to assignment endpoints must exist in the target's tenant (otherwise `422`).
+
 ## Architecture
 
 ### Service Layer
 
-All role and permission operations go through dedicated services:
+All role and permission operations go through dedicated services. A `null` guard always means
+your default guard.
+
+Every method that takes a user takes a `BSPDX\Keystone\Contracts\KeystoneUser`.
 
 - **RoleService** - Role CRUD and queries
-  - `getAllWithPermissions()`, `create()`, `delete()`, `syncPermissions()`
+  - `getAllWithPermissions()` (ordered by name), `paginateWithPermissions($perPage, ?$page)`, `create($name, ?$guard)`, `delete($role)`, `syncPermissions($role, $permissions)`, `getUserRoles(KeystoneUser $user)`, `findByName($name, ?$guard, ?$tenantId)` (a tenant row wins over a global one), `getAllForTenant(?$tenantId)`, `assignToUser(KeystoneUser $user, $roles)`, `removeFromUser(KeystoneUser $user, $roles)`, `clearCache()`
 - **PermissionService** - Permission CRUD and queries
-  - `getAllWithRoles()`, `create()`, `delete()`, `syncToUser()`
+  - `getAllWithRoles()` (ordered by name), `paginateWithRoles($perPage, ?$page)`, `create($name, ?$guard)`, `delete($permission)`, `syncToUser(KeystoneUser $user, $permissions)`, `getUserPermissions(KeystoneUser $user)`, `getAllUserPermissions(KeystoneUser $user)`, `findByName()`, `getAllForTenant()`, `assignToUser()`, `removeFromUser()`, `assignToRole()`, `removeFromRole()`
 - **AuthorizationService** - High-level authorization operations
-  - `assignRolesToUser()`, `assignPermissionsToUser()` (add), `syncRolesForUser()`, `syncPermissionsForUser()` (replace), `userHasRole()`, `userHasPermission()`
+  - `assignRolesToUser()`, `assignPermissionsToUser()` (add), `syncRolesForUser()`, `syncPermissionsForUser()` (replace), `userHasRole()`, `userHasAnyRole()`, `userHasAllRoles()`, `userHasPermission()`, `userHasAnyPermission()`, `userHasAllPermissions()`, `userHasDirectPermission()`, `userCanBypassPermissions()` — all with the super-admin bypass applied
 
 All services are registered in Laravel's service container with interface bindings and
 convenient aliases:
@@ -376,10 +434,51 @@ convenient aliases:
 - `keystone.authorization`
 - `keystone.cache`
 
+### User Contract
+
+`BSPDX\Keystone\Contracts\KeystoneUser` declares every public method `HasKeystone` adds
+(`roles()`, `permissions()`, the assignment methods, the role and permission checks,
+`getAllPermissions()`, `isSuperAdmin()`, `canBypassPermissions()`). Keystone decides whether a
+model takes part in RBAC with `instanceof KeystoneUser`.
+
 ### Models
 
 - `BSPDX\Keystone\Models\KeystoneRole` - Custom role model with tenant scoping and `isSuperAdmin()`
 - `BSPDX\Keystone\Models\KeystonePermission` - Custom permission model with tenant scoping
+
+Public methods on the trait and both models are typed: role arguments are
+`string|int|KeystoneRole|iterable`, permission arguments `string|int|KeystonePermission|iterable`,
+mutating methods return `static`, and checks return `bool`. Names, integer IDs, models, arrays,
+and collections are all accepted; any other type is a `TypeError`. `syncRoles()` and
+`syncPermissions()` on a user resolve every name first and replace the assignments in one
+transaction, so a typo changes nothing. Deleting a user removes their assignments
+(soft-deleted users keep them until force-deleted).
+
+### HTTP Layer
+
+The example routes are served by six controllers in `BSPDX\Keystone\Http\Controllers`, each
+using only resource action names:
+
+| Controller | Actions | Routes |
+|---|---|---|
+| `RoleController` | `index`, `store`, `destroy` | `GET`/`POST /api/roles`, `DELETE /api/roles/{role}` |
+| `PermissionController` | `index`, `store`, `destroy` | `GET`/`POST /api/permissions`, `DELETE /api/permissions/{permission}` |
+| `UserRoleController` | `store` (add), `update` (replace) | `POST`/`PUT /api/users/{user}/roles` |
+| `UserPermissionController` | `store` (add), `update` (replace) | `POST`/`PUT /api/users/{user}/permissions` |
+| `RolePermissionController` | `store` (add), `update` (replace) | `POST`/`PUT /api/roles/{role}/permissions` |
+| `UserAccessController` | `show` | `GET /api/users/{user}/roles-permissions` |
+
+Roles and permissions in responses are built by `Http\Resources\RoleResource` and
+`Http\Resources\PermissionResource`.
+
+### Exceptions
+
+All extend `BSPDX\Keystone\Exceptions\KeystoneException`, which renders as a JSON response
+with a `message` and isn't reported (`ShouldntReport`):
+
+- `CannotDeleteSuperAdminRole` - deleting the super-admin role (403)
+- `ReservedRoleName` - using the super-admin name for a tenant role, multi-tenant (422)
+- `RoleAlreadyExists` / `PermissionAlreadyExists` - a duplicate name and guard in the same tenant, or among global rows (409)
 
 ### Benefits
 
@@ -407,13 +506,25 @@ Enable multi-tenancy in your `.env`:
 KEYSTONE_MULTI_TENANT=true
 ```
 
+No migration is needed: the tenant columns exist in both modes. On an existing install, run the
+one-time data step to move existing assignments into their users' tenants (roles and
+permissions stay global):
+
+```bash
+php artisan keystone:enable-multi-tenancy
+```
+
+To go back to single-tenant, run `php artisan keystone:disable-multi-tenancy` (it refuses when two
+tenants share a role or permission name), then set `KEYSTONE_MULTI_TENANT=false`.
+
 ### Features
 
 - **Automatic Tenant Filtering** - Global scopes automatically filter roles/permissions by authenticated user's tenant
 - **Global Roles/Permissions** - Set `tenant_id = NULL` to make roles/permissions accessible across all tenants
 - **Tenant-Specific Roles** - Roles with `tenant_id` are isolated to a single organization
 - **UUID Support** - `tenant_id` is always a UUID column
-- **Super-Admin Bypass** - Use `::withoutTenant()` scope for cross-tenant operations
+- **Cross-Tenant Queries** - Use `::withoutTenant()` scope for cross-tenant operations
+- **Global Super-Admin** - Only a global role can be the super-admin role; its name is reserved in tenants
 
 ### Usage Examples
 
@@ -471,15 +582,24 @@ if ($user->canBypassPermissions()) {
 ### Keystone Management Commands
 
 ```bash
-# Create roles and permissions
-php artisan keystone:make-role manager
+# Create roles and permissions (--tenant creates them in a tenant; global when omitted)
+php artisan keystone:make-role manager --permissions=view-posts,edit-posts
 php artisan keystone:make-permission edit-posts
+php artisan keystone:make-role manager --tenant=019c17d6-1a87-71be-a6a4-718da52579e9
 
-# Assign and remove roles/permissions
-php artisan keystone:assign-role admin --user={user_id}
-php artisan keystone:unassign-role admin --user={user_id}
-php artisan keystone:assign-permission edit-posts --role=editor
-php artisan keystone:unassign-permission edit-posts --role=editor
+# Assign and remove roles (user by ID or email)
+php artisan keystone:assign-role jane@example.com admin
+php artisan keystone:assign-role 42 editor --sync
+php artisan keystone:unassign-role 42 admin
+
+# Assign and remove permissions (--tenant picks which tenant's role to target)
+php artisan keystone:assign-permission edit-posts --to-role=editor
+php artisan keystone:assign-permission edit-posts --to-user=42
+php artisan keystone:unassign-permission edit-posts --from-role=editor --tenant=019c17d6-1a87-71be-a6a4-718da52579e9
+
+# Switch an existing install's data into or out of tenants
+php artisan keystone:enable-multi-tenancy
+php artisan keystone:disable-multi-tenancy
 ```
 
 ### Learn More
@@ -488,12 +608,32 @@ For comprehensive documentation on multi-tenancy:
 - [Multi-Tenancy Architecture](docs/multi-tenancy.md) - Global scopes vs Spatie teams
 - [Multi-Tenant Usage Examples](docs/examples/multi-tenant-usage.md) - Common patterns and best practices
 
+## Known Issues
+
+**Role and permission list queries follow the logged-in user.** In multi-tenant mode the
+automatic tenant scope on `KeystoneRole` / `KeystonePermission` reads `auth()->user()`. In a
+request from a tenant user, `KeystoneRole::all()` returns that tenant's roles plus global ones; in
+a queued job, a scheduled command, tinker, or for a user with no tenant, the same query returns
+**every tenant's** rows.
+
+- In code that runs without a logged-in user, name the tenant explicitly:
+  `KeystoneRole::withoutTenant()->forTenant($tenantId)` (add `->orWhereNull('tenant_id')` inside a
+  `where()` for global rows), or the services' `getAllForTenant($tenantId)`.
+- If you don't want the automatic filter at all, call `withoutTenant()` on the query, for example
+  once in a query method of your own.
+- What a user or role **holds** is not affected: `hasRole()`, `hasPermissionTo()`, `can()`, and
+  the relationships never depend on who is logged in.
+
+Details, plus a note on duplicates under concurrent writes, are in
+[docs/multi-tenancy.md](docs/multi-tenancy.md#known-issues-and-limitations).
+
 ## Testing
 
 Run the package tests:
 
 ```bash
-composer test
+composer test                # multi-tenant suite
+composer test-single-tenant  # single-tenant suite
 ```
 
 Or with PHPUnit directly:
@@ -504,7 +644,7 @@ Or with PHPUnit directly:
 
 ## Security
 
-If you discover any security issues, please email info@bspdx.com instead of using the issue tracker.
+See [API Security Rules](#api-security-rules). If you discover any security issues, please email info@bspdx.com instead of using the issue tracker.
 
 ## Credits
 
