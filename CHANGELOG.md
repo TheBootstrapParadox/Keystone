@@ -4,7 +4,7 @@
 
 ---
 
-## [Unreleased]
+## [1.0.0-rc.1] - 2026-10-25
 
 Hardening for the 1.0 release candidate. This release contains several **security fixes** and a number of **breaking changes**; read [UPGRADING.md](UPGRADING.md) before updating.
 

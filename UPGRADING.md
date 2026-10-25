@@ -1,6 +1,6 @@
 # Upgrading
 
-## Upgrading to the 1.0 release candidate
+## Upgrading to 1.0.0-rc.1
 
 This release closes several security holes in Keystone's authorization and freezes its public API and schema for 1.0. Fixing them changed behavior you may rely on. Start with sections 1–3, which apply to every app, then work through each other section that applies to yours. [CHANGELOG.md](CHANGELOG.md) has the full list of changes.
 
