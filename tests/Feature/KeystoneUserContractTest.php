@@ -16,8 +16,8 @@ use LogicException;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use stdClass;
+use Tests\Fixtures\AdminUser;
 use Tests\Fixtures\PlainUser;
-use Tests\Fixtures\UuidUser;
 use Tests\TestCase;
 use TypeError;
 
@@ -68,12 +68,12 @@ class KeystoneUserContractTest extends TestCase
     #[Group('ddl')]
     public function a_second_model_that_opts_in_works_through_the_services()
     {
-        Schema::create('uuid_users', function (Blueprint $table) {
-            $table->uuid('id')->primary();
+        Schema::create('admins', function (Blueprint $table) {
+            $table->id();
             $table->uuid('tenant_id')->nullable();
             $table->timestamps();
         });
-        $admin = UuidUser::create();
+        $admin = AdminUser::create();
 
         app(RoleServiceInterface::class)->assignToUser($admin, 'editor');
 

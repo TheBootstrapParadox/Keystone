@@ -345,7 +345,8 @@ class ManagementApiResourceTest extends TestCase
 
         $lookups = 0;
         DB::listen(function ($query) use (&$lookups) {
-            if (str_contains($query->sql, 'from "roles" where "name" = ?')) {
+            // Quote-agnostic: SQLite and PostgreSQL use "roles", MySQL `roles`
+            if (preg_match('/from [`"]roles[`"] where [`"]name[`"] = \?/', $query->sql)) {
                 $lookups++;
             }
         });
