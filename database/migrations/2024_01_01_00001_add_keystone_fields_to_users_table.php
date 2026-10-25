@@ -24,8 +24,9 @@ return new class extends Migration
         }
 
         Schema::table($tableName, function (Blueprint $table) {
-            // NOTE: tenant_id is always UUID, regardless of the user model's own primary key type
-            $table->uuid('tenant_id')->nullable()->after('id');
+            // NOTE: tenant_id is always UUID, regardless of the user model's own primary key type.
+            // No column position: the users table may not have an `id` column
+            $table->uuid('tenant_id')->nullable();
             // Named so down() can tell a Keystone-added column from the app's own
             $table->index('tenant_id', MultiTenantSchemaUpgrade::USERS_TENANT_INDEX);
         });

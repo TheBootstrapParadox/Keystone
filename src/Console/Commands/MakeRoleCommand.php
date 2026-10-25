@@ -47,7 +47,7 @@ class MakeRoleCommand extends Command
             $permissions = $this->gatherPermissions();
 
             if (! empty($permissions)) {
-                $this->roleService->syncPermissions($role, $permissions);
+                $this->roleService->syncPermissions($role, $this->findPermissionsForRole($role, $permissions));
                 $role->refresh();
             }
 

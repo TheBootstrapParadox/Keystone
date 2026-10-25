@@ -13,7 +13,8 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Unique;
 
 /**
- * Role or permission names in a request, resolved in one tenant.
+ * Role or permission names in a request, resolved in one tenant on one guard
+ * (the default auth guard when null).
  *
  * The validation rule from rule() and resolve() share one lookup per name.
  *
@@ -33,22 +34,22 @@ final class TenantAwareNames
     /**
      * @param  class-string<TModel>  $model
      */
-    public function __construct(private string $model, private ?string $tenantId) {}
+    public function __construct(private string $model, private ?string $tenantId, private ?string $guard = null) {}
 
     /**
      * @return self<KeystoneRole>
      */
-    public static function roles(?string $tenantId): self
+    public static function roles(?string $tenantId, ?string $guard = null): self
     {
-        return new self(KeystoneRole::class, $tenantId);
+        return new self(KeystoneRole::class, $tenantId, $guard);
     }
 
     /**
      * @return self<KeystonePermission>
      */
-    public static function permissions(?string $tenantId): self
+    public static function permissions(?string $tenantId, ?string $guard = null): self
     {
-        return new self(KeystonePermission::class, $tenantId);
+        return new self(KeystonePermission::class, $tenantId, $guard);
     }
 
     /**
@@ -102,7 +103,7 @@ final class TenantAwareNames
     {
         if (! array_key_exists($name, $this->resolved)) {
             try {
-                $this->resolved[$name] = $this->model::findByNameForTenant($name, $this->tenantId);
+                $this->resolved[$name] = $this->model::findByNameForTenant($name, $this->tenantId, $this->guard);
             } catch (ModelNotFoundException) {
                 $this->resolved[$name] = null;
             }

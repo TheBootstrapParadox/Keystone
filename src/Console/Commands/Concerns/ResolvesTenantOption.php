@@ -2,12 +2,15 @@
 
 namespace BSPDX\Keystone\Console\Commands\Concerns;
 
+use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 /**
- * For commands with a --tenant option: validate it and look up roles in it.
+ * For commands with a --tenant option: validate it and look up roles in it,
+ * and the permissions given for those roles.
  */
 trait ResolvesTenantOption
 {
@@ -49,6 +52,28 @@ trait ResolvesTenantOption
         } catch (ModelNotFoundException) {
             return null;
         }
+    }
+
+    /**
+     * Resolve permission names for a role on the role's guard (which may not
+     * be the default guard) and in the role's tenant.
+     *
+     * @param  array<int, string>  $names
+     * @return list<KeystonePermission>
+     *
+     * @throws InvalidArgumentException when a name does not resolve
+     */
+    protected function findPermissionsForRole(KeystoneRole $role, array $names): array
+    {
+        $tenant = $this->isMultiTenantEnabled() ? $role->tenant_id : null;
+
+        return array_values(array_map(function (string $name) use ($role, $tenant) {
+            try {
+                return KeystonePermission::findByNameForTenant($name, $tenant, $role->guard_name);
+            } catch (ModelNotFoundException) {
+                throw new InvalidArgumentException("Permission '{$name}' not found for guard '{$role->guard_name}'.");
+            }
+        }, $names));
     }
 
     /**

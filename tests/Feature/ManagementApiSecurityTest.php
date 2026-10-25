@@ -344,6 +344,45 @@ class ManagementApiSecurityTest extends TestCase
     }
 
     #[Test]
+    public function a_non_string_guard_name_is_rejected()
+    {
+        $caller = $this->caller(['create-roles', 'create-permissions']);
+
+        foreach (['/api/roles', '/api/permissions'] as $uri) {
+            $this->actingAs($caller)
+                ->postJson($uri, ['name' => 'editor', 'guard_name' => []])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('guard_name');
+        }
+    }
+
+    #[Test]
+    public function a_role_on_a_non_default_guard_is_given_that_guards_permissions()
+    {
+        config(['auth.guards.api' => ['driver' => 'session', 'provider' => 'users']]);
+        KeystonePermission::create(['name' => 'publish', 'guard_name' => 'web']);
+        $apiPublish = KeystonePermission::create(['name' => 'publish', 'guard_name' => 'api']);
+        $caller = User::factory()->create();
+        $caller->assignRole('super-admin');
+
+        $created = $this->actingAs($caller)
+            ->postJson('/api/roles', ['name' => 'publisher', 'guard_name' => 'api', 'permissions' => ['publish']])
+            ->assertCreated();
+        $role = KeystoneRole::findOrFail($created->json('role.id'));
+        $this->assertSame([$apiPublish->id], $role->permissions->modelKeys());
+
+        foreach (['postJson', 'putJson'] as $method) {
+            $role->permissions()->detach();
+
+            $this->actingAs($caller)
+                ->{$method}("/api/roles/{$role->id}/permissions", ['permissions' => ['publish']])
+                ->assertOk();
+
+            $this->assertSame([$apiPublish->id], $role->fresh()->permissions->modelKeys(), $method);
+        }
+    }
+
+    #[Test]
     public function a_role_name_from_another_tenant_is_rejected_for_a_user()
     {
         $this->enableMultiTenancy();
@@ -404,6 +443,55 @@ class ManagementApiSecurityTest extends TestCase
         $roles = collect($this->actingAs($caller)->getJson('/api/roles')->assertOk()->json('roles'));
 
         $this->assertSame(2, $roles->firstWhere('name', 'viewer')['users_count']);
+    }
+
+    #[Test]
+    public function users_count_ignores_assignments_left_in_a_members_previous_tenant()
+    {
+        $this->enableMultiTenancy();
+        KeystoneRole::create(['name' => 'viewer']);
+        $member = User::factory()->create(['tenant_id' => self::TENANT_B]);
+        $member->assignRole('viewer');
+        $member->update(['tenant_id' => self::TENANT_A]);
+        $caller = $this->caller(['view-roles'], self::TENANT_A);
+
+        $roles = collect($this->actingAs($caller)->getJson('/api/roles')->assertOk()->json('roles'));
+
+        $this->assertFalse($member->fresh()->hasRole('viewer'));
+        $this->assertSame(0, $roles->firstWhere('name', 'viewer')['users_count']);
+    }
+
+    #[Test]
+    public function listed_permissions_hide_other_tenants_role_names_from_a_tenant_caller()
+    {
+        $this->enableMultiTenancy();
+        $permission = KeystonePermission::create(['name' => 'export']);
+        KeystoneRole::create(['name' => 'shared'])->givePermissionTo($permission);
+        KeystoneRole::create(['name' => 'a-only', 'tenant_id' => self::TENANT_A])->givePermissionTo($permission);
+        KeystoneRole::create(['name' => 'b-only', 'tenant_id' => self::TENANT_B])->givePermissionTo($permission);
+        $caller = $this->caller(['view-permissions'], self::TENANT_A);
+
+        foreach (['/api/permissions', '/api/permissions?per_page=100'] as $uri) {
+            $listed = collect($this->actingAs($caller)->getJson($uri)->assertOk()->json('permissions'))->firstWhere('name', 'export');
+
+            $this->assertEqualsCanonicalizing(['shared', 'a-only'], $listed['roles'], $uri);
+        }
+    }
+
+    #[Test]
+    public function listed_roles_hide_other_tenants_permission_names_from_a_tenant_caller()
+    {
+        $this->enableMultiTenancy();
+        KeystonePermission::create(['name' => 'b-only', 'tenant_id' => self::TENANT_B]);
+        KeystonePermission::create(['name' => 'export']);
+        KeystoneRole::create(['name' => 'shared'])->givePermissionTo(
+            KeystonePermission::withoutTenant()->whereIn('name', ['b-only', 'export'])->get()
+        );
+        $caller = $this->caller(['view-roles'], self::TENANT_A);
+
+        $roles = collect($this->actingAs($caller)->getJson('/api/roles')->assertOk()->json('roles'));
+
+        $this->assertSame(['export'], $roles->firstWhere('name', 'shared')['permissions']);
     }
 
     #[Test]

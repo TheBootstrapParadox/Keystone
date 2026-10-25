@@ -30,6 +30,19 @@ trait ResolvesManagementContext
     }
 
     /**
+     * The requested guard_name, or null when it is missing or not a string.
+     *
+     * Used to build rules before validation runs; validation still rejects a
+     * guard_name that is not a string.
+     */
+    protected function requestedGuard(Request $request): ?string
+    {
+        $guard = $request->input('guard_name');
+
+        return is_string($guard) ? $guard : null;
+    }
+
+    /**
      * The tenant a model belongs to, as the reference for resolving names.
      */
     protected function tenantOf(Model $model): ?string

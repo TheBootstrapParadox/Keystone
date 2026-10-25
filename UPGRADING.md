@@ -155,7 +155,7 @@ Keystone used to skip Gate registration whenever the app ran in the console outs
 
 Everywhere a guard isn't given, Keystone used a mix of hard-coded `'web'` and the auth default. Checks (`hasRole()`, `hasPermissionTo()`, …) always used `'web'`, while `keystone:make-permission` used your default guard, so permissions created by the command never matched a check. Now everything uses `auth.defaults.guard`. Guard parameters are now `?string $guard = null`.
 
-Names given to assignment methods (`assignRole('editor')`) now resolve only among rows on the default guard. Pass a model instance to assign a role or permission on another guard.
+Names given to assignment methods (`assignRole('editor')`) now resolve only among rows on the default guard. Pass a model instance to assign a role or permission on another guard. The console commands (`--guard`) and the management API resolve a role's permission names on that role's guard.
 
 **What to do:** if your default guard isn't `web`, either move existing rows to it:
 

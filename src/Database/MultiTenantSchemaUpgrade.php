@@ -69,8 +69,9 @@ final class MultiTenantSchemaUpgrade
             return [];
         }
 
+        // No column position: the users table may not have an `id` column
         Schema::table($table, function (Blueprint $blueprint) {
-            $blueprint->uuid('tenant_id')->nullable()->after('id');
+            $blueprint->uuid('tenant_id')->nullable();
             $blueprint->index('tenant_id', self::USERS_TENANT_INDEX);
         });
 

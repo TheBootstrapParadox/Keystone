@@ -88,14 +88,16 @@ class AssignPermissionCommand extends Command
         $previousPermissions = $role->permissions->pluck('name')->toArray();
 
         try {
+            $permissionModels = $this->findPermissionsForRole($role, $permissions);
+
             if ($this->option('remove')) {
-                $this->permissionService->removeFromRole($role, $permissions);
+                $this->permissionService->removeFromRole($role, $permissionModels);
                 $action = 'removed from';
             } elseif ($this->option('sync')) {
-                $this->roleService->syncPermissions($role, $permissions);
+                $this->roleService->syncPermissions($role, $permissionModels);
                 $action = 'synced to';
             } else {
-                $this->permissionService->assignToRole($role, $permissions);
+                $this->permissionService->assignToRole($role, $permissionModels);
                 $action = 'assigned to';
             }
 

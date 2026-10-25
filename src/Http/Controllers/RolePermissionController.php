@@ -30,7 +30,7 @@ class RolePermissionController
     {
         $this->denyTenantWriteToGlobal($request, $role);
         $this->escalationGuard($request)->modifyRole($role);
-        $permissionNames = TenantAwareNames::permissions($this->tenantOf($role));
+        $permissionNames = TenantAwareNames::permissions($this->tenantOf($role), $role->guard_name);
 
         $validated = $request->validate([
             'permissions' => ['required', 'array', 'max:100'],
@@ -55,7 +55,7 @@ class RolePermissionController
     {
         $this->denyTenantWriteToGlobal($request, $role);
         $this->escalationGuard($request)->modifyRole($role);
-        $permissionNames = TenantAwareNames::permissions($this->tenantOf($role));
+        $permissionNames = TenantAwareNames::permissions($this->tenantOf($role), $role->guard_name);
 
         $validated = $request->validate([
             'permissions' => ['present', 'array', 'max:100'],

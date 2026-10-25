@@ -94,7 +94,12 @@ class UnassignPermissionCommand extends Command
         }
 
         try {
-            $this->permissionService->removeFromRole($role, $permissions);
+            // --all removes exactly the rows the role holds, whatever their guard or tenant
+            $permissionModels = $this->option('all')
+                ? $role->permissions->all()
+                : $this->findPermissionsForRole($role, $permissions);
+
+            $this->permissionService->removeFromRole($role, $permissionModels);
 
             $this->clearPermissionCache();
             $role->refresh();

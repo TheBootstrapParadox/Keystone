@@ -388,6 +388,8 @@ The same `POST` adds / `PUT` replaces pattern applies to `/api/users/{user}/perm
 permissions, created_at}`, where `permissions` is an array of names, and every permission is
 `{id, name, guard_name, title, description, created_at}`. `created_at` is ISO 8601 (or `null`).
 `GET /api/roles` adds `users_count` to each role, and `GET /api/permissions` adds `roles` (names).
+In multi-tenant mode, a caller with a tenant only sees names and counts from their own tenant and
+global rows.
 
 **Listing.** `GET /api/roles` and `GET /api/permissions` are ordered by name. Pass `per_page`
 (1–100) and optionally `page` to get one page plus a `meta` object (`current_page`, `per_page`,

@@ -2,7 +2,7 @@
 
 namespace BSPDX\Keystone\Http\Resources;
 
-use BSPDX\Keystone\Models\KeystonePermission;
+use BSPDX\Keystone\Http\Resources\Concerns\ListsNamesVisibleToCaller;
 use BSPDX\Keystone\Models\KeystoneRole;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -14,6 +14,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class RoleResource extends JsonResource
 {
+    use ListsNamesVisibleToCaller;
+
     /**
      * @return array{id: int, name: string, guard_name: string, title: string|null, description: string|null, permissions: list<string>, created_at: string|null, users_count?: mixed}
      */
@@ -25,7 +27,7 @@ class RoleResource extends JsonResource
             'guard_name' => $this->guard_name,
             'title' => $this->title,
             'description' => $this->description,
-            'permissions' => $this->permissions->map(fn (KeystonePermission $permission) => $permission->name)->values()->all(),
+            'permissions' => $this->namesVisibleToCaller($request, $this->permissions),
             'created_at' => $this->created_at?->toJSON(),
             'users_count' => $this->whenCounted('users'),
         ];

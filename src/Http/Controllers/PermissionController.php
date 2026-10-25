@@ -50,7 +50,7 @@ class PermissionController
         $tenantId = $this->callerTenantId($request);
 
         $validated = $request->validate([
-            'name' => ['required', 'string', TenantAwareNames::uniqueRule('permissions', $request->input('guard_name'), $tenantId)],
+            'name' => ['required', 'string', TenantAwareNames::uniqueRule('permissions', $this->requestedGuard($request), $tenantId)],
             'guard_name' => ['nullable', 'string', Rule::in(array_keys(config('auth.guards', [])))],
         ]);
 

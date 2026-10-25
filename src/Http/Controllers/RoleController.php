@@ -34,11 +34,14 @@ class RoleController
         $callerTenant = $this->callerTenantId($request);
 
         // One count query for the listed roles; a tenant caller only counts
-        // members of their own tenant so other tenants' membership is not disclosed.
+        // members of their own tenant so other tenants' membership is not disclosed,
+        // and only assignments those members can see (their tenant's or global),
+        // as hasRole() does.
         $roles = EloquentCollection::make($paginator?->items() ?? $this->roleService->getAllWithPermissions()->all())
             ->loadCount(['users' => function ($query) use ($callerTenant) {
                 if ($callerTenant !== null) {
-                    $query->where($query->getModel()->qualifyColumn('tenant_id'), $callerTenant);
+                    $query->where($query->getModel()->qualifyColumn('tenant_id'), $callerTenant)
+                        ->where(fn ($q) => $q->where('model_has_roles.tenant_id', $callerTenant)->orWhereNull('model_has_roles.tenant_id'));
                 }
             }]);
 
@@ -58,9 +61,11 @@ class RoleController
     public function store(Request $request): JsonResponse
     {
         $tenantId = $this->callerTenantId($request);
-        $permissionNames = TenantAwareNames::permissions($tenantId);
+        $guard = $this->requestedGuard($request);
+        // Permission names resolve on the role's guard, not the default one
+        $permissionNames = TenantAwareNames::permissions($tenantId, $guard);
 
-        $nameRules = ['required', 'string', TenantAwareNames::uniqueRule('roles', $request->input('guard_name'), $tenantId)];
+        $nameRules = ['required', 'string', TenantAwareNames::uniqueRule('roles', $guard, $tenantId)];
         if ($tenantId !== null) {
             $nameRules[] = Rule::notIn([config('keystone.rbac.super_admin_role', 'super-admin')]);
         }
