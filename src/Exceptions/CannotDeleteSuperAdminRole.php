@@ -11,4 +11,12 @@ class CannotDeleteSuperAdminRole extends KeystoneException
     {
         parent::__construct('Cannot delete the super admin role.');
     }
+
+    /**
+     * Nobody may delete the super-admin role.
+     */
+    public function status(): int
+    {
+        return 403;
+    }
 }

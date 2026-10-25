@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\User;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -16,20 +15,17 @@ return new class extends Migration
     public function up(): void
     {
         // Match the pivots' model_id column to the user model's key type
-        $authenticatableClass = config('keystone.user.model')
-            ?? config('auth.providers.users.model', User::class);
+        $authenticatableClass = config('keystone.user.model') ?? config('auth.providers.users.model')
+            ?? throw new LogicException('Keystone could not determine the user model. Set keystone.user.model or auth.providers.users.model.');
         $modelIdType = $this->modelIdType(new $authenticatableClass);
 
         // Permissions table
         Schema::create('permissions', function (Blueprint $table) {
             $table->id();
 
-            // Multi-tenancy support (only if enabled in features)
+            // Global (tenant_id = NULL) or tenant-specific; always NULL in single-tenant mode
             // NOTE: tenant_id is always UUID to match users.tenant_id column type
-            if (config('keystone.features.multi_tenant', false)) {
-                $table->uuid('tenant_id')->nullable();
-                $table->index('tenant_id');
-            }
+            $table->uuid('tenant_id')->nullable();
 
             $table->string('name');
             $table->string('guard_name')->default('web');
@@ -37,24 +33,18 @@ return new class extends Migration
             $table->text('description')->nullable()->comment('Explains permission purpose');
             $table->timestamps();
 
-            // Unique constraint includes tenant_id when multi-tenant is enabled
-            if (config('keystone.features.multi_tenant', false)) {
-                $table->unique(['tenant_id', 'name', 'guard_name']);
-            } else {
-                $table->unique(['name', 'guard_name']);
-            }
+            // Leads with tenant_id, so it also serves tenant lookups. NULL tenants
+            // are distinct in unique keys; the models reject duplicate names.
+            $table->unique(['tenant_id', 'name', 'guard_name']);
         });
 
         // Roles table
         Schema::create('roles', function (Blueprint $table) {
             $table->id();
 
-            // Multi-tenancy support: Roles can be global (tenant_id = NULL) or tenant-specific
+            // Global (tenant_id = NULL) or tenant-specific; always NULL in single-tenant mode
             // NOTE: tenant_id is always UUID to match users.tenant_id column type
-            if (config('keystone.features.multi_tenant', false)) {
-                $table->uuid('tenant_id')->nullable();
-                $table->index('tenant_id');
-            }
+            $table->uuid('tenant_id')->nullable();
 
             $table->string('name');
             $table->string('guard_name')->default('web');
@@ -62,12 +52,9 @@ return new class extends Migration
             $table->text('description')->nullable()->comment('Explains role purpose and scope');
             $table->timestamps();
 
-            // Unique constraint includes tenant_id when multi-tenant is enabled
-            if (config('keystone.features.multi_tenant', false)) {
-                $table->unique(['tenant_id', 'name', 'guard_name']);
-            } else {
-                $table->unique(['name', 'guard_name']);
-            }
+            // Leads with tenant_id, so it also serves tenant lookups. NULL tenants
+            // are distinct in unique keys; the models reject duplicate names.
+            $table->unique(['tenant_id', 'name', 'guard_name']);
         });
 
         // Model has permissions pivot table
@@ -84,12 +71,9 @@ return new class extends Migration
             };
             $table->index(['model_id', 'model_type'], 'model_has_permissions_model_id_model_type_index');
 
-            // Multi-tenancy support in pivot table
+            // The assigned user's tenant (NULL in single-tenant mode)
             // NOTE: tenant_id is always UUID to match users.tenant_id column type
-            if (config('keystone.features.multi_tenant', false)) {
-                $table->uuid('tenant_id')->nullable();
-                $table->index('tenant_id');
-            }
+            $table->uuid('tenant_id')->nullable();
 
             $table->foreign('permission_id')
                 ->references('id')
@@ -99,12 +83,9 @@ return new class extends Migration
             // Assignments are always hard-deleted, so no soft-delete column
             $table->timestamps();
 
-            // Unique constraint to prevent duplicates (handles NULL tenant_id correctly)
-            if (config('keystone.features.multi_tenant', false)) {
-                $table->unique(['tenant_id', 'permission_id', 'model_id', 'model_type'], 'model_has_permissions_unique');
-            } else {
-                $table->unique(['permission_id', 'model_id', 'model_type'], 'model_has_permissions_unique');
-            }
+            // Unique per tenant context. It does not deduplicate rows whose
+            // tenant_id is NULL (NULLs are distinct in unique keys).
+            $table->unique(['tenant_id', 'permission_id', 'model_id', 'model_type'], 'model_has_permissions_unique');
         });
 
         // Model has roles pivot table
@@ -121,12 +102,9 @@ return new class extends Migration
             };
             $table->index(['model_id', 'model_type'], 'model_has_roles_model_id_model_type_index');
 
-            // Multi-tenancy support in pivot table
+            // The assigned user's tenant (NULL in single-tenant mode)
             // NOTE: tenant_id is always UUID to match users.tenant_id column type
-            if (config('keystone.features.multi_tenant', false)) {
-                $table->uuid('tenant_id')->nullable();
-                $table->index('tenant_id');
-            }
+            $table->uuid('tenant_id')->nullable();
 
             $table->foreign('role_id')
                 ->references('id')
@@ -136,12 +114,9 @@ return new class extends Migration
             // Assignments are always hard-deleted, so no soft-delete column
             $table->timestamps();
 
-            // Unique constraint to prevent duplicates (handles NULL tenant_id correctly)
-            if (config('keystone.features.multi_tenant', false)) {
-                $table->unique(['tenant_id', 'role_id', 'model_id', 'model_type'], 'model_has_roles_unique');
-            } else {
-                $table->unique(['role_id', 'model_id', 'model_type'], 'model_has_roles_unique');
-            }
+            // Unique per tenant context. It does not deduplicate rows whose
+            // tenant_id is NULL (NULLs are distinct in unique keys).
+            $table->unique(['tenant_id', 'role_id', 'model_id', 'model_type'], 'model_has_roles_unique');
         });
 
         // Role has permissions pivot table

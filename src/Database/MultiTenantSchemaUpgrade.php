@@ -2,7 +2,7 @@
 
 namespace BSPDX\Keystone\Database;
 
-use App\Models\User;
+use BSPDX\Keystone\Support\UserModel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -10,12 +10,14 @@ use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
 /**
- * Brings a schema created in single-tenant mode up to the multi-tenant schema.
+ * Brings a schema created in single-tenant mode before Keystone's schema
+ * became the same in both modes up to that one schema.
  *
- * Every step is idempotent, so running it on a schema that is already
- * multi-tenant changes nothing. Existing roles and permissions become global
- * (tenant_id NULL). Used by Keystone's migrations and by the
- * keystone:enable-multi-tenancy command, since migrations only run once.
+ * Every schema step is idempotent, so running it on a schema that already
+ * has the tenant columns and tenant-aware keys changes nothing. Existing
+ * roles, permissions, and assignments keep a NULL tenant_id. The schema
+ * steps are used by Keystone's migrations; the assignment backfill is used
+ * by the keystone:enable-multi-tenancy command.
  *
  * @internal
  */
@@ -40,7 +42,7 @@ final class MultiTenantSchemaUpgrade
     ];
 
     /**
-     * Run every step.
+     * Run every schema step.
      *
      * @return list<string> a description of each change made (empty when none)
      */
@@ -78,6 +80,8 @@ final class MultiTenantSchemaUpgrade
     /**
      * Add tenant_id to roles and permissions (existing rows become global).
      *
+     * No index on tenant_id alone: the tenant-aware unique key leads with it.
+     *
      * @return list<string>
      */
     public function addRolePermissionTenantColumns(): array
@@ -91,7 +95,6 @@ final class MultiTenantSchemaUpgrade
 
             Schema::table($table, function (Blueprint $blueprint) {
                 $blueprint->uuid('tenant_id')->nullable()->after('id');
-                $blueprint->index('tenant_id');
             });
 
             $changes[] = "Added {$table}.tenant_id (existing rows are global)";
@@ -101,8 +104,9 @@ final class MultiTenantSchemaUpgrade
     }
 
     /**
-     * Add tenant_id to the assignment pivots and backfill it from each
-     * assigned user's tenant.
+     * Add tenant_id to the assignment pivots (existing rows keep NULL).
+     *
+     * No index on tenant_id alone: the tenant-aware unique key leads with it.
      *
      * @return list<string>
      */
@@ -115,12 +119,10 @@ final class MultiTenantSchemaUpgrade
                 continue;
             }
 
-            Schema::table($table, function (Blueprint $blueprint) use ($table) {
+            Schema::table($table, function (Blueprint $blueprint) {
                 $blueprint->uuid('tenant_id')->nullable()->after('model_id');
-                $blueprint->index('tenant_id', "{$table}_tenant_id_index");
             });
 
-            $this->backfillTenantId($table, $this->userModel());
             $changes[] = "Added {$table}.tenant_id";
         }
 
@@ -185,20 +187,33 @@ final class MultiTenantSchemaUpgrade
     }
 
     /**
-     * Copy each assigned user's tenant_id onto their pivot rows.
+     * Stamp both assignment pivots' NULL-tenant rows with their user's tenant.
+     *
+     * @return int the number of rows changed
+     */
+    public function backfillAssignments(): int
+    {
+        $user = $this->userModel();
+
+        return $this->backfillTenantId('model_has_roles', $user)
+            + $this->backfillTenantId('model_has_permissions', $user);
+    }
+
+    /**
+     * Copy each assigned user's tenant_id onto their pivot rows that have none.
      *
      * A correlated subquery, which SQLite, MySQL/MariaDB, and PostgreSQL all
      * accept. Rows are matched by the user model's morph class (so morph maps
      * work) and key name, never by a model_type pattern.
      */
-    public function backfillTenantId(string $pivotTable, Model $user): void
+    public function backfillTenantId(string $pivotTable, Model $user): int
     {
         $userTable = $user->getTable();
         $userKey = $user->getKeyName();
 
         // Users without a tenant column have no tenant to copy
         if (! Schema::hasColumn($userTable, 'tenant_id')) {
-            return;
+            return 0;
         }
 
         $tenantOfUser = DB::table($userTable, 'keystone_users')
@@ -206,7 +221,8 @@ final class MultiTenantSchemaUpgrade
             ->whereColumn("keystone_users.{$userKey}", "{$pivotTable}.model_id")
             ->limit(1);
 
-        DB::table($pivotTable)
+        return DB::table($pivotTable)
+            ->whereNull('tenant_id')
             ->where('model_type', $user->getMorphClass())
             ->whereExists(fn ($query) => $query->selectRaw('1')
                 ->from($userTable, 'keystone_users')
@@ -217,8 +233,6 @@ final class MultiTenantSchemaUpgrade
 
     private function userModel(): Model
     {
-        $class = config('keystone.user.model') ?? config('auth.providers.users.model', User::class);
-
-        return new $class;
+        return UserModel::instance();
     }
 }

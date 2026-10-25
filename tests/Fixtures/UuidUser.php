@@ -2,6 +2,7 @@
 
 namespace Tests\Fixtures;
 
+use BSPDX\Keystone\Contracts\KeystoneUser;
 use BSPDX\Keystone\Traits\HasKeystone;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -9,7 +10,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 /**
  * A UUID-keyed user model, for testing identifier lookup in commands.
  */
-class UuidUser extends Authenticatable
+class UuidUser extends Authenticatable implements KeystoneUser
 {
     use HasKeystone, HasUuids;
 

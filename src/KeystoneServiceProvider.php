@@ -4,6 +4,7 @@ namespace BSPDX\Keystone;
 
 use BSPDX\Keystone\Console\Commands\AssignPermissionCommand;
 use BSPDX\Keystone\Console\Commands\AssignRoleCommand;
+use BSPDX\Keystone\Console\Commands\DisableMultiTenancyCommand;
 use BSPDX\Keystone\Console\Commands\EnableMultiTenancyCommand;
 use BSPDX\Keystone\Console\Commands\MakePermissionCommand;
 use BSPDX\Keystone\Console\Commands\MakeRoleCommand;
@@ -101,6 +102,7 @@ class KeystoneServiceProvider extends ServiceProvider
                 UnassignRoleCommand::class,
                 UnassignPermissionCommand::class,
                 EnableMultiTenancyCommand::class,
+                DisableMultiTenancyCommand::class,
             ]);
         }
 

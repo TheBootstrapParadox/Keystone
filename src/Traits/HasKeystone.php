@@ -5,8 +5,10 @@ namespace BSPDX\Keystone\Traits;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Support\DefaultGuard;
+use BSPDX\Keystone\Support\MultiTenancy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -26,10 +28,7 @@ trait HasKeystone
             }
 
             foreach (['model_has_roles', 'model_has_permissions'] as $table) {
-                DB::table($table)
-                    ->where('model_type', $model->getMorphClass())
-                    ->where('model_id', $model->getKey())
-                    ->delete();
+                $model->keystoneAssignments($table)->delete();
             }
         });
     }
@@ -88,12 +87,32 @@ trait HasKeystone
             ->withoutGlobalScope('tenant')
             ->withTimestamps();
 
-        if (config('keystone.features.multi_tenant', false)) {
+        if (MultiTenancy::enabled()) {
             $relation->withPivot('tenant_id');
             $this->constrainToVisibleAssignments($relation, $table);
         }
 
         return $relation;
+    }
+
+    /**
+     * Every row of an assignment pivot that belongs to this user (all tenants).
+     */
+    protected function keystoneAssignments(string $table): QueryBuilder
+    {
+        return DB::table($table)
+            ->where('model_type', $this->getMorphClass())
+            ->where('model_id', $this->getKey());
+    }
+
+    /**
+     * This user's rows of an assignment pivot in the user's own tenant (all
+     * rows in single-tenant mode). Removal and replacement act on these.
+     */
+    protected function keystoneAssignmentsInTenant(string $table): QueryBuilder
+    {
+        return $this->keystoneAssignments($table)
+            ->when(MultiTenancy::enabled(), fn (QueryBuilder $query) => $query->where('tenant_id', $this->tenant_id));
     }
 
     /**
@@ -105,7 +124,7 @@ trait HasKeystone
      */
     protected function constrainToVisibleAssignments($query, string $table): void
     {
-        if (! config('keystone.features.multi_tenant', false) || $this->tenant_id === null) {
+        if (! MultiTenancy::enabled() || $this->tenant_id === null) {
             return;
         }
 
@@ -116,16 +135,15 @@ trait HasKeystone
      * Attach the given roles/permissions that this user cannot already see,
      * stamping the pivot with the user's tenant in multi-tenant mode.
      *
-     * @param  Collection<int, KeystoneRole|KeystonePermission>  $models
+     * @template TModel of KeystoneRole|KeystonePermission
+     *
+     * @param  Collection<int, TModel>  $models
      */
     protected function attachMissingAssignments(string $table, string $relatedPivotKey, Collection $models): void
     {
         $ids = $models->pluck('id')->unique()->values();
 
-        $existing = DB::table($table)
-            ->where('model_type', $this->getMorphClass())
-            ->where('model_id', $this->getKey())
-            ->whereIn($relatedPivotKey, $ids);
+        $existing = $this->keystoneAssignments($table)->whereIn($relatedPivotKey, $ids);
         $this->constrainToVisibleAssignments($existing, $table);
 
         $missing = $ids->diff($existing->pluck($relatedPivotKey));
@@ -135,7 +153,7 @@ trait HasKeystone
         }
 
         $now = now();
-        $tenant = config('keystone.features.multi_tenant', false) ? ['tenant_id' => $this->tenant_id] : [];
+        $tenant = MultiTenancy::enabled() ? ['tenant_id' => $this->tenant_id] : [];
 
         DB::table($table)->insert($missing->map(fn ($id) => [
             $relatedPivotKey => $id,
@@ -152,65 +170,43 @@ trait HasKeystone
     // ============================================
 
     /**
-     * Assign roles to user with automatic tenant_id population
+     * Add roles to the user, stamping the assignment with the user's tenant
+     * in multi-tenant mode.
      */
-    public function assignRole(...$roles): self
+    public function assignRole(string|int|KeystoneRole|iterable ...$roles): static
     {
         $this->attachMissingAssignments('model_has_roles', 'role_id', $this->convertToRoleModels($roles));
-        $this->unsetRelation('roles'); // Force reload of roles relationship
+        $this->unsetRelation('roles');
 
         return $this;
     }
 
     /**
-     * Remove roles from user (tenant-scoped)
+     * Remove roles from the user (only assignments in the user's tenant).
      */
-    public function removeRole(...$roles): self
+    public function removeRole(string|int|KeystoneRole|iterable ...$roles): static
     {
         $roleModels = $this->convertToRoleModels($roles);
 
-        // Only remove roles from current tenant context
-        $query = DB::table('model_has_roles')
-            ->where('model_type', $this->getMorphClass())
-            ->where('model_id', $this->id)
-            ->whereIn('role_id', $roleModels->pluck('id'));
+        $this->keystoneAssignmentsInTenant('model_has_roles')
+            ->whereIn('role_id', $roleModels->pluck('id'))
+            ->delete();
 
-        if (config('keystone.features.multi_tenant', false)) {
-            $query->where('tenant_id', $this->tenant_id);
-        }
-
-        $query->delete();
-
-        $this->unsetRelation('roles'); // Force reload of roles relationship
+        $this->unsetRelation('roles');
 
         return $this;
     }
 
     /**
-     * Sync roles for user (tenant-scoped)
+     * Replace the user's roles (in the user's tenant) with exactly the given set.
+     *
+     * Every role is resolved before anything is removed, and the removal and
+     * the new assignments share one transaction.
      */
-    public function syncRoles(...$roles): self
+    public function syncRoles(string|int|KeystoneRole|iterable ...$roles): static
     {
-        $roleModels = $this->convertToRoleModels($roles);
-
-        // Remove all current tenant roles
-        $query = DB::table('model_has_roles')
-            ->where('model_type', $this->getMorphClass())
-            ->where('model_id', $this->id);
-
-        if (config('keystone.features.multi_tenant', false)) {
-            $query->where('tenant_id', $this->tenant_id);
-        }
-
-        $query->delete();
-
-        // Add new roles
-        if ($roleModels->isNotEmpty()) {
-            $this->assignRole(...$roleModels);
-        } else {
-            // If removing all roles, still need to unset the relationship
-            $this->unsetRelation('roles');
-        }
+        $this->replaceAssignments('model_has_roles', 'role_id', $this->convertToRoleModels($roles));
+        $this->unsetRelation('roles');
 
         return $this;
     }
@@ -220,63 +216,61 @@ trait HasKeystone
     // ============================================
 
     /**
-     * Give direct permissions to user
+     * Give direct permissions to the user.
      */
-    public function givePermissionTo(...$permissions): self
+    public function givePermissionTo(string|int|KeystonePermission|iterable ...$permissions): static
     {
         $this->attachMissingAssignments('model_has_permissions', 'permission_id', $this->convertToPermissionModels($permissions));
-        $this->unsetRelation('permissions'); // Force reload of permissions relationship
+        $this->unsetRelation('permissions');
 
         return $this;
     }
 
     /**
-     * Revoke direct permissions from user
+     * Revoke direct permissions from the user (only assignments in the user's tenant).
      */
-    public function revokePermissionTo(...$permissions): self
+    public function revokePermissionTo(string|int|KeystonePermission|iterable ...$permissions): static
     {
         $permissionModels = $this->convertToPermissionModels($permissions);
 
-        $query = DB::table('model_has_permissions')
-            ->where('model_type', $this->getMorphClass())
-            ->where('model_id', $this->id)
-            ->whereIn('permission_id', $permissionModels->pluck('id'));
+        $this->keystoneAssignmentsInTenant('model_has_permissions')
+            ->whereIn('permission_id', $permissionModels->pluck('id'))
+            ->delete();
 
-        if (config('keystone.features.multi_tenant', false)) {
-            $query->where('tenant_id', $this->tenant_id);
-        }
-
-        $query->delete();
-
-        $this->unsetRelation('permissions'); // Force reload of permissions relationship
+        $this->unsetRelation('permissions');
 
         return $this;
     }
 
     /**
-     * Sync direct permissions for user
+     * Replace the user's direct permissions (in the user's tenant) with
+     * exactly the given set, all-or-nothing like syncRoles().
      */
-    public function syncPermissions(...$permissions): self
+    public function syncPermissions(string|int|KeystonePermission|iterable ...$permissions): static
     {
-        $query = DB::table('model_has_permissions')
-            ->where('model_type', $this->getMorphClass())
-            ->where('model_id', $this->id);
-
-        if (config('keystone.features.multi_tenant', false)) {
-            $query->where('tenant_id', $this->tenant_id);
-        }
-
-        $query->delete();
-
-        $permissionModels = $this->convertToPermissionModels($permissions);
-        if ($permissionModels->isNotEmpty()) {
-            $this->givePermissionTo(...$permissionModels);
-        } else {
-            // If removing all permissions, still need to unset the relationship
-            $this->unsetRelation('permissions');
-        }
+        $this->replaceAssignments('model_has_permissions', 'permission_id', $this->convertToPermissionModels($permissions));
+        $this->unsetRelation('permissions');
 
         return $this;
+    }
+
+    /**
+     * Delete this user's assignments in the user's tenant and attach the given
+     * models, in one transaction.
+     *
+     * @template TModel of KeystoneRole|KeystonePermission
+     *
+     * @param  Collection<int, TModel>  $models
+     */
+    protected function replaceAssignments(string $table, string $relatedPivotKey, Collection $models): void
+    {
+        DB::transaction(function () use ($table, $relatedPivotKey, $models) {
+            $this->keystoneAssignmentsInTenant($table)->delete();
+
+            if ($models->isNotEmpty()) {
+                $this->attachMissingAssignments($table, $relatedPivotKey, $models);
+            }
+        });
     }
 
     // ============================================
@@ -290,7 +284,7 @@ trait HasKeystone
      * The super-admin bypass applies to permission checks, the Gate, the
      * role/permission middleware, and AuthorizationService — not here.
      */
-    public function hasRole($roles, ?string $guard = null): bool
+    public function hasRole(string|int|KeystoneRole|iterable $roles, ?string $guard = null): bool
     {
         $guard = DefaultGuard::resolve($guard);
 
@@ -308,11 +302,9 @@ trait HasKeystone
             return $this->roles->contains('id', $roles);
         }
 
-        if (is_array($roles)) {
-            foreach ($roles as $role) {
-                if ($this->hasRole($role, $guard)) {
-                    return true;
-                }
+        foreach ($roles as $role) {
+            if ($this->hasRole($role, $guard)) {
+                return true;
             }
         }
 
@@ -322,7 +314,7 @@ trait HasKeystone
     /**
      * Check if user has any of the given roles
      */
-    public function hasAnyRole(...$roles): bool
+    public function hasAnyRole(string|int|KeystoneRole|iterable ...$roles): bool
     {
         return $this->hasRole($roles);
     }
@@ -330,7 +322,7 @@ trait HasKeystone
     /**
      * Check if user has all of the given roles
      */
-    public function hasAllRoles(...$roles): bool
+    public function hasAllRoles(string|int|KeystoneRole|iterable ...$roles): bool
     {
         // Flatten so an array argument means "all of these", never "any of these"
         foreach (collect($roles)->flatten() as $role) {
@@ -345,7 +337,7 @@ trait HasKeystone
     /**
      * Check if user has a specific permission
      */
-    public function hasPermissionTo($permission, ?string $guard = null): bool
+    public function hasPermissionTo(string|int|KeystonePermission $permission, ?string $guard = null): bool
     {
         $guard = DefaultGuard::resolve($guard);
 
@@ -368,7 +360,7 @@ trait HasKeystone
     /**
      * Check if user has permission via any of their roles
      */
-    protected function hasPermissionViaRole($permission, ?string $guard = null): bool
+    protected function hasPermissionViaRole(string|int|KeystonePermission $permission, ?string $guard = null): bool
     {
         $guard = DefaultGuard::resolve($guard);
 
@@ -385,6 +377,8 @@ trait HasKeystone
 
     /**
      * Get all permissions for user (direct + via roles)
+     *
+     * @return Collection<int, KeystonePermission>
      */
     public function getAllPermissions(): Collection
     {
@@ -402,7 +396,7 @@ trait HasKeystone
     /**
      * Check if user has any of the given permissions
      */
-    public function hasAnyPermission(...$permissions): bool
+    public function hasAnyPermission(string|int|KeystonePermission|iterable ...$permissions): bool
     {
         // Super-admin bypass
         if ($this->isSuperAdmin()) {
@@ -423,7 +417,7 @@ trait HasKeystone
     /**
      * Check if user has all of the given permissions
      */
-    public function hasAllPermissions(...$permissions): bool
+    public function hasAllPermissions(string|int|KeystonePermission|iterable ...$permissions): bool
     {
         // Super-admin bypass
         if ($this->isSuperAdmin()) {
@@ -448,7 +442,7 @@ trait HasKeystone
      * actually hold. AuthorizationService::userHasDirectPermission() keeps the
      * bypass.
      */
-    public function hasDirectPermission($permission, ?string $guard = null): bool
+    public function hasDirectPermission(string|int|KeystonePermission $permission, ?string $guard = null): bool
     {
         $guard = DefaultGuard::resolve($guard);
 
@@ -465,8 +459,11 @@ trait HasKeystone
 
     /**
      * Convert mixed role input to KeystoneRole models, resolving names in this user's tenant
+     *
+     * @param  iterable<mixed>  $roles
+     * @return Collection<int, KeystoneRole>
      */
-    protected function convertToRoleModels($roles): Collection
+    protected function convertToRoleModels(iterable $roles): Collection
     {
         return collect($roles)->flatten()->map(
             fn ($role) => KeystoneRole::resolveForTenant($role, $this->keystoneUserTenantId())
@@ -475,8 +472,11 @@ trait HasKeystone
 
     /**
      * Convert mixed permission input to KeystonePermission models, resolving names in this user's tenant
+     *
+     * @param  iterable<mixed>  $permissions
+     * @return Collection<int, KeystonePermission>
      */
-    protected function convertToPermissionModels($permissions): Collection
+    protected function convertToPermissionModels(iterable $permissions): Collection
     {
         return collect($permissions)->flatten()->map(
             fn ($permission) => KeystonePermission::resolveForTenant($permission, $this->keystoneUserTenantId())
@@ -486,7 +486,7 @@ trait HasKeystone
     /**
      * The name of a permission given as a name, model, or integer ID (null if no such ID).
      */
-    protected function keystonePermissionName($permission): ?string
+    protected function keystonePermissionName(string|int|KeystonePermission $permission): ?string
     {
         if ($permission instanceof KeystonePermission) {
             return $permission->name;
@@ -504,7 +504,7 @@ trait HasKeystone
      */
     protected function keystoneUserTenantId(): ?string
     {
-        return config('keystone.features.multi_tenant', false) ? $this->tenant_id : null;
+        return MultiTenancy::enabled() ? $this->tenant_id : null;
     }
 
     // ============================================

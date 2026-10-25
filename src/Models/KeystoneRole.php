@@ -2,11 +2,13 @@
 
 namespace BSPDX\Keystone\Models;
 
-use App\Models\User;
+use BSPDX\Keystone\Contracts\KeystoneUser;
 use BSPDX\Keystone\Exceptions\ReservedRoleName;
 use BSPDX\Keystone\Exceptions\RoleAlreadyExists;
 use BSPDX\Keystone\Models\Concerns\ResolvesByNameForTenant;
 use BSPDX\Keystone\Support\DefaultGuard;
+use BSPDX\Keystone\Support\MultiTenancy;
+use BSPDX\Keystone\Support\UserModel;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -55,7 +57,7 @@ class KeystoneRole extends Model
 
         // Add global scope for tenant isolation when multi-tenancy is enabled
         static::addGlobalScope('tenant', function (Builder $query) {
-            if (! config('keystone.features.multi_tenant', false)) {
+            if (! MultiTenancy::enabled()) {
                 return;
             }
 
@@ -76,7 +78,7 @@ class KeystoneRole extends Model
             }
 
             // Set tenant_id for multi-tenant mode
-            if (config('keystone.features.multi_tenant', false) &&
+            if (MultiTenancy::enabled() &&
                 auth()->check() &&
                 ! isset($role->tenant_id)) {
                 $role->tenant_id = auth()->user()->tenant_id;
@@ -112,7 +114,7 @@ class KeystoneRole extends Model
      */
     protected static function guardReservedName(self $role): void
     {
-        if (config('keystone.features.multi_tenant', false)
+        if (MultiTenancy::enabled()
             && $role->tenant_id !== null
             && $role->name === config('keystone.rbac.super_admin_role', 'super-admin')) {
             throw ReservedRoleName::forTenant($role->name);
@@ -142,18 +144,20 @@ class KeystoneRole extends Model
 
     /**
      * The users that have this role.
+     *
+     * @return MorphToMany<Model&KeystoneUser, $this>
      */
     public function users(): MorphToMany
     {
         $relation = $this->morphedByMany(
-            config('keystone.user.model') ?? config('auth.providers.users.model', User::class),
+            UserModel::className(),
             'model',
             'model_has_roles',
             'role_id',
             'model_id'
         )->withTimestamps();
 
-        if (config('keystone.features.multi_tenant', false)) {
+        if (MultiTenancy::enabled()) {
             $relation->withPivot('tenant_id');
         }
 
@@ -167,7 +171,7 @@ class KeystoneRole extends Model
     /**
      * Assign permissions to this role.
      */
-    public function givePermissionTo(...$permissions): self
+    public function givePermissionTo(string|int|KeystonePermission|iterable ...$permissions): static
     {
         $permissionModels = $this->convertToPermissionModels($permissions);
 
@@ -180,7 +184,7 @@ class KeystoneRole extends Model
     /**
      * Sync permissions for this role.
      */
-    public function syncPermissions(...$permissions): self
+    public function syncPermissions(string|int|KeystonePermission|iterable ...$permissions): static
     {
         $permissionModels = $this->convertToPermissionModels($permissions);
 
@@ -193,7 +197,7 @@ class KeystoneRole extends Model
     /**
      * Revoke permissions from this role.
      */
-    public function revokePermissionTo(...$permissions): self
+    public function revokePermissionTo(string|int|KeystonePermission|iterable ...$permissions): static
     {
         $permissionModels = $this->convertToPermissionModels($permissions);
 
@@ -206,8 +210,12 @@ class KeystoneRole extends Model
     /**
      * Check if role has a specific permission.
      */
-    public function hasPermissionTo($permission, ?string $guardName = null): bool
+    public function hasPermissionTo(string|int|KeystonePermission $permission, ?string $guardName = null): bool
     {
+        if (is_int($permission)) {
+            return $this->permissions->contains('id', $permission);
+        }
+
         $guardName = $guardName ?? $this->guard_name;
 
         $permissionName = $permission instanceof KeystonePermission
@@ -221,6 +229,8 @@ class KeystoneRole extends Model
 
     /**
      * Get all permission names for this role.
+     *
+     * @return Collection<int, string>
      */
     public function getPermissionNames(): Collection
     {
@@ -245,6 +255,9 @@ class KeystoneRole extends Model
 
     /**
      * Convert permission names or models to models, resolving names in this role's tenant.
+     *
+     * @param  array<int, mixed>  $permissions
+     * @return Collection<int, KeystonePermission>
      */
     protected function convertToPermissionModels(array $permissions): Collection
     {
@@ -264,7 +277,7 @@ class KeystoneRole extends Model
             return false;
         }
 
-        return ! config('keystone.features.multi_tenant', false) || $this->tenant_id === null;
+        return ! MultiTenancy::enabled() || $this->tenant_id === null;
     }
 
     /**
@@ -278,7 +291,7 @@ class KeystoneRole extends Model
     /**
      * Determine if this role belongs to a specific tenant.
      */
-    public function belongsToTenant($tenantId): bool
+    public function belongsToTenant(?string $tenantId): bool
     {
         return $this->tenant_id === $tenantId;
     }
@@ -316,10 +329,8 @@ class KeystoneRole extends Model
      * Scope a query to roles belonging to a specific tenant only.
      * Global roles (tenant_id = NULL) are excluded; use global() for those.
      * Respects the tenant global scope — chain after withoutTenant() for cross-tenant reads.
-     *
-     * @param  string|int  $tenantId
      */
-    public function scopeForTenant(Builder $query, $tenantId): Builder
+    public function scopeForTenant(Builder $query, string $tenantId): Builder
     {
         return $query->where($query->getModel()->getTable().'.tenant_id', $tenantId);
     }

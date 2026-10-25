@@ -2,17 +2,25 @@
 
 namespace BSPDX\Keystone\Services\Contracts;
 
+use BSPDX\Keystone\Contracts\KeystoneUser;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
-use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
 interface PermissionServiceInterface
 {
     /**
-     * Get all permissions with their roles.
+     * Get all permissions with their roles, ordered by name then id.
      */
     public function getAllWithRoles(): Collection;
+
+    /**
+     * One page of the permissions getAllWithRoles() returns.
+     *
+     * @return LengthAwarePaginator<int, KeystonePermission>
+     */
+    public function paginateWithRoles(int $perPage, ?int $page = null): LengthAwarePaginator;
 
     /**
      * Create a new permission.
@@ -27,17 +35,17 @@ interface PermissionServiceInterface
     /**
      * Sync permissions directly to a user.
      */
-    public function syncToUser(Authenticatable $user, array $permissions): void;
+    public function syncToUser(KeystoneUser $user, array $permissions): void;
 
     /**
      * Get direct permissions assigned to a user.
      */
-    public function getUserPermissions(Authenticatable $user): Collection;
+    public function getUserPermissions(KeystoneUser $user): Collection;
 
     /**
      * Get all permissions for a user (including via roles).
      */
-    public function getAllUserPermissions(Authenticatable $user): Collection;
+    public function getAllUserPermissions(KeystoneUser $user): Collection;
 
     /**
      * Find a permission by name.
@@ -52,12 +60,12 @@ interface PermissionServiceInterface
     /**
      * Assign permission(s) directly to a user.
      */
-    public function assignToUser(Authenticatable $user, string|array $permissions): void;
+    public function assignToUser(KeystoneUser $user, string|array $permissions): void;
 
     /**
      * Remove permission(s) from a user.
      */
-    public function removeFromUser(Authenticatable $user, string|array $permissions): void;
+    public function removeFromUser(KeystoneUser $user, string|array $permissions): void;
 
     /**
      * Assign permission(s) to a role.

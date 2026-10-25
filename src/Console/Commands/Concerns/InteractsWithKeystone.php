@@ -2,9 +2,10 @@
 
 namespace BSPDX\Keystone\Console\Commands\Concerns;
 
-use App\Models\User;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
 use BSPDX\Keystone\Support\DefaultGuard;
+use BSPDX\Keystone\Support\MultiTenancy;
+use BSPDX\Keystone\Support\UserModel;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -17,8 +18,7 @@ trait InteractsWithKeystone
      */
     protected function getUserModel(): string
     {
-        return config('keystone.user.model')
-            ?? config('auth.providers.users.model', User::class);
+        return UserModel::className();
     }
 
     /**
@@ -52,7 +52,7 @@ trait InteractsWithKeystone
      */
     protected function isMultiTenantEnabled(): bool
     {
-        return config('keystone.features.multi_tenant', false);
+        return MultiTenancy::enabled();
     }
 
     /**

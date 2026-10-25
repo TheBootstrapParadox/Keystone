@@ -13,6 +13,7 @@ Keystone provides built-in multi-tenant support for roles and permissions using 
 - [Working with Roles and Permissions](#working-with-roles-and-permissions)
 - [Laravel Gate Integration](#laravel-gate-integration)
 - [Migration Guide](#migration-guide)
+- [Known Issues and Limitations](#known-issues-and-limitations)
 - [Troubleshooting](#troubleshooting)
 
 ## Architecture Overview
@@ -56,13 +57,14 @@ Or in `config/keystone.php`:
 
 ### User Model Setup
 
-Your User model should use the `HasKeystone` trait and have a `tenant_id` column:
+Your User model should implement `KeystoneUser`, use the `HasKeystone` trait, and have a `tenant_id` column (Keystone's migrations add it):
 
 ```php
+use BSPDX\Keystone\Contracts\KeystoneUser;
 use BSPDX\Keystone\Traits\HasKeystone;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 
-class User extends Authenticatable
+class User extends Authenticatable implements KeystoneUser
 {
     use HasKeystone;
 
@@ -98,7 +100,7 @@ Otherwise, `model_id` in pivot tables will be `unsignedBigInteger`.
 
 ## Database Schema
 
-When multi-tenancy is enabled, the following tables include a `tenant_id` column:
+The schema is the same whether multi-tenancy is on or off: the following tables always include a `tenant_id` column. In single-tenant mode Keystone never writes or filters by it, so it stays NULL, and turning multi-tenancy on or off never needs a migration.
 
 ### Users Table
 
@@ -127,8 +129,7 @@ CREATE TABLE roles (
     description TEXT NULL,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    UNIQUE KEY unique_role_per_tenant (tenant_id, name, guard_name),
-    INDEX idx_tenant_id (tenant_id)
+    UNIQUE KEY unique_role_per_tenant (tenant_id, name, guard_name)
 );
 ```
 
@@ -144,8 +145,7 @@ CREATE TABLE permissions (
     description TEXT NULL,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    UNIQUE KEY unique_permission_per_tenant (tenant_id, name, guard_name),
-    INDEX idx_tenant_id (tenant_id)
+    UNIQUE KEY unique_permission_per_tenant (tenant_id, name, guard_name)
 );
 ```
 
@@ -161,8 +161,7 @@ CREATE TABLE model_has_roles (
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
     FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_assignment (tenant_id, role_id, model_id, model_type),
-    INDEX idx_tenant_id (tenant_id)
+    UNIQUE KEY unique_assignment (tenant_id, role_id, model_id, model_type)
 );
 
 CREATE TABLE model_has_permissions (
@@ -174,8 +173,7 @@ CREATE TABLE model_has_permissions (
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
     FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_assignment (tenant_id, permission_id, model_id, model_type),
-    INDEX idx_tenant_id (tenant_id)
+    UNIQUE KEY unique_assignment (tenant_id, permission_id, model_id, model_type)
 );
 
 CREATE TABLE role_has_permissions (
@@ -190,7 +188,9 @@ CREATE TABLE role_has_permissions (
 );
 ```
 
-**Note:** All pivot tables include timestamps. Assignments are hard-deleted, so fresh installs have no `deleted_at` column (installs created before the 1.0 release candidate may still have an unused one). Unique keys treat NULL tenants as distinct, so in multi-tenant mode Keystone also rejects duplicate global roles and permissions at the model level (`RoleAlreadyExists` / `PermissionAlreadyExists`).
+**Note:** All pivot tables include timestamps. Assignments are hard-deleted, so fresh installs have no `deleted_at` column (installs created before the 1.0 release candidate may still have an unused one). Each unique key leads with `tenant_id`, so there is no separate index on `tenant_id` alone (the `2024_01_01_00006` migration drops the ones older installs have). The users table keeps its own `tenant_id` index.
+
+Unique keys treat NULL tenants as distinct, so the database doesn't stop two global rows (every row, in single-tenant mode) from sharing a name. Keystone checks at the model level instead and throws `RoleAlreadyExists` / `PermissionAlreadyExists`; over HTTP these render as 409. See [Known Issues and Limitations](#duplicates-under-concurrent-writes) for what that check can't catch.
 
 ## Global vs Tenant-Specific
 
@@ -535,25 +535,27 @@ Enable multi-tenancy in your `.env`:
 KEYSTONE_MULTI_TENANT=true
 ```
 
-#### Step 3: Upgrade the Schema
-
-Keystone's migrations have already run in single-tenant mode, and migrations only run once, so upgrade the schema with the dedicated command:
-
-```bash
-php artisan keystone:enable-multi-tenancy
-```
-
-It adds `tenant_id` to your users table, `roles`, `permissions`, and both assignment pivots, and makes every unique key tenant-aware. Existing roles and permissions become global. It's idempotent and safe to re-run.
-
-#### Step 4: Run Migrations
+#### Step 3: Run Migrations
 
 ```bash
 php artisan migrate
 ```
 
-This runs any Keystone migrations you haven't run yet. If you update the package and enable multi-tenancy in the same deploy, the new upgrade migration performs step 3 for you.
+Every install has the same schema in both modes, so this only matters if you haven't run Keystone's latest migrations yet. `2024_01_01_00005_make_tenant_schema_uniform` adds the tenant columns and tenant-aware unique keys to installs created in single-tenant mode before the schema became uniform. It runs whatever the setting is.
 
-#### Step 5: Assign Users to Tenants
+#### Step 4: Assign Users to Tenants
+
+Give your users a `tenant_id` (see the example below) before the next step.
+
+#### Step 5: Move Existing Assignments into Tenants
+
+```bash
+php artisan keystone:enable-multi-tenancy
+```
+
+It stamps every role and permission assignment that has no tenant with its user's tenant, so tenant-scoped `removeRole()` / `syncRoles()` act on it. It changes no schema, roles, permissions, or users, runs in one transaction, and asks for confirmation (pass `--force` to skip it), because assignments you stored without a tenant on purpose are moved too. Existing roles and permissions stay global.
+
+Example for step 4:
 
 ```php
 use App\Models\User;
@@ -600,6 +602,16 @@ $roles = KeystoneRole::all();  // Should only see Tenant 2 roles + global roles
 $this->assertNotContains($tenantSpecificRoleForTenant1, $tenant2Roles);
 ```
 
+### Switching Back to Single-Tenant
+
+```bash
+php artisan keystone:disable-multi-tenancy
+```
+
+It sets `tenant_id` to NULL on every row of `roles`, `permissions`, `model_has_roles`, and `model_has_permissions` in one transaction, and leaves your users table alone. Before changing anything it checks for roles or permissions whose name and guard are used by more than one tenant (or by a tenant and a global row): those would become duplicates, so it lists them and stops. Rename or merge them, then run it again. A user holding the same role or permission in two tenant contexts ends up with one assignment. Then set `KEYSTONE_MULTI_TENANT=false`.
+
+If you only turn the setting off, rows keep their `tenant_id`, single-tenant mode ignores it, and same-named roles from different tenants all become visible. Run the command first.
+
 ### Migrating from Spatie Permission
 
 Keystone now uses a custom RBAC implementation instead of Spatie's package. The API is similar, but some differences exist:
@@ -615,6 +627,50 @@ Keystone now uses a custom RBAC implementation instead of Spatie's package. The 
 1. **Your code should mostly work** - The API (assign Role, hasPermissionTo, etc.) is the same
 2. **Remove direct Spatie calls** - Don't use Spatie's `Permission::findByName()` directly
 3. **Use Keystone models** - Import `use BSPDX\Keystone\Models\{KeystoneRole, KeystonePermission}`
+
+## Known Issues and Limitations
+
+### List queries follow the logged-in user
+
+The automatic tenant scope on `KeystoneRole` and `KeystonePermission` reads the logged-in user (`auth()->user()`). The same query therefore returns different rows depending on where it runs:
+
+- in a request from a tenant A user, `KeystoneRole::all()` returns tenant A's roles plus global roles;
+- in a queued job, a scheduled command, tinker, or a request from a user with no tenant, nobody with a tenant is logged in, so the same query returns **every tenant's** roles.
+
+**In code that runs without a logged-in user**, name the tenant explicitly:
+
+```php
+// One tenant's own rows
+KeystoneRole::withoutTenant()->forTenant($tenantId)->get();
+
+// One tenant's rows plus global rows
+KeystoneRole::withoutTenant()
+    ->where(fn ($query) => $query->forTenant($tenantId)->orWhereNull('tenant_id'))
+    ->get();
+
+// Through the services
+app(RoleServiceInterface::class)->getAllForTenant($tenantId);
+```
+
+**If you don't want the automatic filter at all**, call `withoutTenant()` on the query. To do that once, put it in a query method of your own and use that everywhere:
+
+```php
+final class Roles
+{
+    public static function query(): Builder
+    {
+        return KeystoneRole::withoutTenant();
+    }
+}
+```
+
+**What is not affected:** what a user or a role *holds*. `hasRole()`, `hasPermissionTo()`, `can()`, a user's `roles()` / `permissions()`, and a role's `permissions()` never depend on who is logged in.
+
+### Duplicates under concurrent writes
+
+The duplicate-name check that stands in for the database's unique key is check-then-insert, so two requests creating the same role or permission name at the same moment (in the same tenant, or globally) can both succeed. Assigning works the same way: two simultaneous `assignRole('editor')` calls for a user whose assignment has no tenant, which includes every user in single-tenant mode, can store the assignment twice.
+
+The effect is small: checks treat the copies as one, removing the role or permission deletes every copy, and a duplicated role can be deleted by ID. If your app creates roles or assigns them from concurrent jobs, serialize those writes (for example with a cache lock).
 
 ## Troubleshooting
 

@@ -13,4 +13,12 @@ class PermissionAlreadyExists extends KeystoneException
 
         return new self("A permission '{$name}' already exists for guard '{$guard}' {$scope}.");
     }
+
+    /**
+     * A duplicate is a conflict with an existing row.
+     */
+    public function status(): int
+    {
+        return 409;
+    }
 }

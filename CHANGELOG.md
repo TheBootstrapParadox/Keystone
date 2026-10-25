@@ -10,7 +10,13 @@ Hardening for the 1.0 release candidate. This release contains several **securit
 
 ### Added
 
-- `keystone:enable-multi-tenancy` command. It upgrades an install whose tables were created in single-tenant mode to the multi-tenant schema. It adds `tenant_id` to users, roles, permissions, and both assignment pivots, and makes every unique key tenant-aware; existing roles and permissions become global. Migrations only run once, so this is the way to enable multi-tenancy after installing. A new migration (`2024_01_01_00004_upgrade_roles_permissions_for_multi_tenant`) runs the same steps when you update the package and enable multi-tenancy in the same deploy.
+- `BSPDX\Keystone\Contracts\KeystoneUser` interface, declaring every public method `HasKeystone` adds. See the BREAKING entry below.
+- `keystone:enable-multi-tenancy {--force}` command: after turning multi-tenancy on, stamps every assignment that has no tenant with its user's tenant, in one transaction. It changes no schema, roles, permissions, or users.
+- `keystone:disable-multi-tenancy {--force}` command: sets every Keystone `tenant_id` back to NULL in one transaction, keeps one row of an assignment held in two tenant contexts, and refuses (changing nothing) when two tenants use the same role or permission name. Switching from multi-tenant back to single-tenant is now supported.
+- Migrations `2024_01_01_00004_upgrade_roles_permissions_for_multi_tenant` and `2024_01_01_00005_make_tenant_schema_uniform`, which bring installs created in single-tenant mode to the uniform schema (see Changed), and `2024_01_01_00006_drop_redundant_tenant_indexes`, which drops the index on `tenant_id` alone from `roles`, `permissions`, and both pivots wherever a unique key leading with `tenant_id` covers it.
+- `RoleServiceInterface::paginateWithPermissions()` and `PermissionServiceInterface::paginateWithRoles()`.
+- `GET /api/roles` and `GET /api/permissions` accept an optional `per_page` (1–100) and `page`, returning one page plus `meta` (`current_page`, `per_page`, `last_page`, `total`). Without `per_page` they return the full list as before.
+- `RoleResource` and `PermissionResource` API Resources, and the resource controllers listed under Changed.
 - `--tenant=<uuid>` option on `keystone:make-role`, `keystone:make-permission`, `keystone:assign-permission`, and `keystone:unassign-permission`. It creates the role or permission in that tenant, or finds `--to-role` / `--from-role` in that tenant.
 - `keystone.role` and `keystone.permission` middleware aliases. They're always registered, even when your app defines its own `role` / `permission` aliases.
 - `KeystoneDemoUserSeeder`, which creates the demo users. It refuses to run in `production`.
@@ -24,23 +30,40 @@ Hardening for the 1.0 release candidate. This release contains several **securit
   - grant a role if they hold every permission that role grants;
   - grant permissions (to a user or a role) they hold themselves.
 
-  Only a super-admin can grant, remove, or change the permissions of the super-admin role. Violations get **403** and change nothing, even for the other items in the same request. Roles or permissions the target already has are not checked. The trait, services, and commands are not restricted.
-- **BREAKING:** In multi-tenant mode, a caller with a tenant gets **403** when deleting a **global** role or permission, or changing a global role's permissions, through the API. Callers with no tenant are unaffected.
-- **BREAKING:** In multi-tenant mode, only a **global** role named `keystone.rbac.super_admin_role` makes a user a super-admin. Creating or renaming a tenant role to that name throws `ReservedRoleName`, and the API rejects it with 422.
-- **BREAKING:** The `Gate::before` callback no longer denies. It returns `true` for super-admins and for held permissions, and otherwise returns `null`, so your policies and `Gate::define` abilities decide. Before, if any permission (in any tenant) shared an ability's name, users without it were denied even when a policy allowed them.
-- **BREAKING:** The Gate callback is registered in every context, including queue workers, the scheduler, and tinker, instead of only for HTTP requests and tests. `can()` in queued jobs now honors Keystone permissions.
+  Only a super-admin can grant, remove, or change the permissions of the super-admin role. Violations get **403** and change nothing, even for the other items in the same request. Roles or permissions the target already has are not checked. The trait, services, and commands are not restricted. ([UPGRADING](UPGRADING.md#4-management-api-no-privilege-escalation))
+- **BREAKING:** In multi-tenant mode, a caller with a tenant gets **403** when deleting a **global** role or permission, or changing a global role's permissions, through the API. Callers with no tenant are unaffected. ([UPGRADING](UPGRADING.md#5-management-api-tenant-callers-cant-modify-global-rows))
+- **BREAKING:** In multi-tenant mode, only a **global** role named `keystone.rbac.super_admin_role` makes a user a super-admin. Creating or renaming a tenant role to that name throws `ReservedRoleName`, and the API rejects it with 422. ([UPGRADING](UPGRADING.md#6-super-admin-must-be-a-global-role))
+- **BREAKING:** The `Gate::before` callback no longer denies. It returns `true` for super-admins and for held permissions, and otherwise returns `null`, so your policies and `Gate::define` abilities decide. Before, if any permission (in any tenant) shared an ability's name, users without it were denied even when a policy allowed them. ([UPGRADING](UPGRADING.md#7-gate-callback-defers-to-your-policies))
+- **BREAKING:** The Gate callback is registered in every context, including queue workers, the scheduler, and tinker, instead of only for HTTP requests and tests. `can()` in queued jobs now honors Keystone permissions. ([UPGRADING](UPGRADING.md#8-gate-callback-runs-in-queues-and-commands))
 - **BREAKING:** Wherever no guard is given, Keystone now uses `auth.defaults.guard` instead of `'web'`. That covers:
   - `hasRole()`, `hasPermissionTo()`, `hasDirectPermission()`, `hasAny*` / `hasAll*`;
   - `RoleService::create()` / `findByName()` and `PermissionService::create()` / `findByName()`;
   - `PermissionRegistrar::permissionExists()`;
   - model creation, name resolution, the API, and the super-admin check.
 
-  Guard parameters are now `?string $guard = null`. Nothing changes if your default guard is `web`.
-- **BREAKING:** `hasDirectPermission()` no longer passes automatically for super-admins, matching the 0.11.0 change to `hasRole()`. `AuthorizationService::userHasDirectPermission()` keeps the bypass.
-- **BREAKING:** `KeystoneSeeder` no longer creates demo users. Run `KeystoneDemoUserSeeder` for them.
-- **BREAKING:** With `keystone.load_routes` enabled, Keystone loads only `routes/api.php`. It no longer loads the demo web routes (`/admin`, `/posts/edit`). The API routes load when `routes/keystone-api.php` isn't published, regardless of `routes/keystone-web.php`.
-- **BREAKING:** Role and permission names given to assignment methods now resolve only among rows on the default guard. Pass a model instance to assign a role or permission on another guard.
-- **BREAKING (custom implementers only):** `RoleServiceInterface::create()` / `findByName()`, `PermissionServiceInterface::create()` / `findByName()`, and `KeystoneRole::revokePermissionTo(...$permissions)` have new signatures.
+  Guard parameters are now `?string $guard = null`. Nothing changes if your default guard is `web`. ([UPGRADING](UPGRADING.md#9-default-guard-is-authdefaultsguard))
+- **BREAKING:** `hasDirectPermission()` no longer passes automatically for super-admins, matching the 0.11.0 change to `hasRole()`. `AuthorizationService::userHasDirectPermission()` keeps the bypass. ([UPGRADING](UPGRADING.md#10-hasdirectpermission-is-literal-for-super-admins))
+- **BREAKING:** `KeystoneSeeder` no longer creates demo users. Run `KeystoneDemoUserSeeder` for them. ([UPGRADING](UPGRADING.md#11-demo-users-moved-to-keystonedemouserseeder))
+- **BREAKING:** With `keystone.load_routes` enabled, Keystone loads only `routes/api.php`. It no longer loads the demo web routes (`/admin`, `/posts/edit`). The API routes load when `routes/keystone-api.php` isn't published, regardless of `routes/keystone-web.php`. ([UPGRADING](UPGRADING.md#12-load_routes-loads-the-api-routes-only))
+- **BREAKING:** Role and permission names given to assignment methods now resolve only among rows on the default guard. Pass a model instance to assign a role or permission on another guard. ([UPGRADING](UPGRADING.md#9-default-guard-is-authdefaultsguard))
+- **BREAKING (custom implementers only):** `RoleServiceInterface::create()` / `findByName()`, `PermissionServiceInterface::create()` / `findByName()`, and `KeystoneRole::revokePermissionTo(...$permissions)` have new signatures. ([UPGRADING](UPGRADING.md#14-custom-service-implementations))
+- **BREAKING:** Your user model must declare `implements KeystoneUser` alongside `use HasKeystone;`. The services take a `KeystoneUser` where they took an `Authenticatable`, and a configured user model without the interface makes the management API and commands throw a `LogicException` naming the class. A logged-in user whose model doesn't implement it gets 403 from the `role` / `permission` middleware and is left to your policies by the Gate. Keystone checks `instanceof KeystoneUser` instead of `method_exists()`. ([UPGRADING §1](UPGRADING.md#1-add-implements-keystoneuser-to-your-user-model))
+- **BREAKING:** The minimum Laravel version is 12.41 (`laravel/framework: ^12.41|^13.0`). Keystone relies on `Cache::memo()` (12.9) and `Connection::afterRollBack()` (12.32). ([UPGRADING §2](UPGRADING.md#2-laravel-1241-or-later))
+- **BREAKING:** The schema is the same whether multi-tenancy is on or off. Every install has a nullable `tenant_id` on the users table, `roles`, `permissions`, and both assignment pivots, with tenant-aware unique keys; in single-tenant mode the columns stay NULL and Keystone neither writes nor filters by them. The migrations no longer read `keystone.features.multi_tenant`, and `00005` upgrades installs created in single-tenant mode. As a result, a duplicate role or permission name in single-tenant mode is rejected by Keystone (`RoleAlreadyExists` / `PermissionAlreadyExists`) instead of by a database unique key. ([UPGRADING §3](UPGRADING.md#3-update-the-package-and-migrations), [§19](UPGRADING.md#19-switching-multi-tenancy-on-or-off))
+- **BREAKING:** Keystone's exceptions render as JSON client errors and are no longer reported (`ShouldntReport`): 409 for `RoleAlreadyExists` / `PermissionAlreadyExists`, 422 for `ReservedRoleName`, 403 for `CannotDeleteSuperAdminRole` (unchanged message). Before, everything but the last was a 500. This applies wherever they reach the HTTP layer, including your own endpoints. ([UPGRADING §17](UPGRADING.md#17-keystone-exceptions-render-as-client-errors))
+- **BREAKING:** Every role and permission in a management API response has one fixed shape, built by `RoleResource` / `PermissionResource`: a role is `id`, `name`, `guard_name`, `title`, `description`, `permissions` (names), `created_at`; a permission is the same without `permissions`. `tenant_id`, `updated_at`, pivot data, and nested permission objects are no longer returned, and `created_at` is ISO 8601 on every route. ([UPGRADING §15](UPGRADING.md#15-management-api-response-shapes))
+- **BREAKING (custom implementers only):** `RoleServiceInterface` and `PermissionServiceInterface` gain `paginateWithPermissions()` / `paginateWithRoles()`, and their user parameters are `KeystoneUser`. ([UPGRADING §14](UPGRADING.md#14-custom-service-implementations))
+- **BREAKING:** `RolePermissionController` is split into `RoleController`, `PermissionController`, `UserRoleController`, `UserPermissionController`, `RolePermissionController` (a role's permissions), and `UserAccessController`, using only resource action names. URIs, route names, and middleware are unchanged; published route files must be updated. ([UPGRADING §16](UPGRADING.md#16-management-api-controllers-split-by-resource))
+- **BREAKING:** Public methods on `HasKeystone`, `KeystoneRole`, and `KeystonePermission` declare parameter and return types (role arguments `string|int|KeystoneRole|iterable`, permission arguments `string|int|KeystonePermission|iterable`, mutating methods return `static`). Accepted values are unchanged, but overrides must match and an unsupported top-level argument is now a `TypeError`. `KeystonePermission::hasRole()` accepts an iterable (any of them). ([UPGRADING §18](UPGRADING.md#18-typed-method-signatures))
+- `GET /api/roles` and `GET /api/permissions` are ordered by name, then `id`. `users_count` is counted for the listed page only, so a page costs the same number of queries whatever its size.
+- `roles` / `permissions` arrays in API requests hold at most 100 distinct names (422 otherwise).
+- The example API route group applies `throttle:60,1`.
+- `POST /api/roles` creates the role and attaches its permissions in one transaction.
+- Each role or permission name in an API request is looked up once, shared by validation and the action.
+- `RoleService::findByName()` / `PermissionService::findByName()` are deterministic: when a tenant row and a global row both match, the tenant row is returned.
+- The Gate callback reads the permission list from the cache store at most once per request, queued job, or command (`Cache::memo()`), instead of once per `can()`. A long-lived worker still sees changes made by other processes in its next job.
+- Keystone throws a `LogicException` naming `keystone.user.model` and `auth.providers.users.model` when neither is set, and no longer references `App\Models\User`.
+- Fresh installs no longer create an index on `tenant_id` alone on `roles`, `permissions`, or the pivots; the tenant-aware unique keys cover it.
 - API validation is tenant- and guard-aware:
   - A role or permission name only needs to be unique within the caller's tenant (or among global rows) on the same guard. Tenant B can now create `editor` when tenant A already has one.
   - Names passed to assignment endpoints must resolve in the **target's** tenant; otherwise the response is 422 (was 404).
@@ -67,11 +90,13 @@ Hardening for the 1.0 release candidate. This release contains several **securit
 - In multi-tenant mode, duplicate **global** roles or permissions could be created, because unique keys treat NULL tenants as distinct. Creating or renaming onto an existing name, guard, and tenant now throws `RoleAlreadyExists` / `PermissionAlreadyExists`.
 - Loaded `permissions` / `roles` relations on `KeystoneRole` and `KeystonePermission` weren't refreshed after `syncPermissions()`, `assignRole()`, `syncRoles()`, or `removeRole()`.
 - `PermissionRegistrar::refresh()` registered a duplicate Gate callback on every call.
+- `syncPermissions()` on a user deleted the user's direct permissions before resolving the new names, so an unknown name (for example a typo passed to `keystone:assign-permission --to-user=… --sync`) threw after the permissions were already gone. `syncRoles()` and `syncPermissions()` now resolve every name first and replace the assignments in one transaction, so a failure leaves the user unchanged.
+- `removeRole()`, `syncRoles()`, `revokePermissionTo()`, and `syncPermissions()` matched pivot rows by `$this->id`, so on a user model whose key column isn't `id` they silently removed nothing. Every pivot query now uses `getKey()`.
 - The 0.11.0 entry below was dated 2027 instead of 2026.
 
 ### Removed
 
-- **BREAKING:** The `keystone.feature` middleware and `BSPDX\Keystone\Http\Middleware\EnsureFeatureEnabled`. `multi_tenant` is the only feature flag and was never used to gate routes.
+- **BREAKING:** The `keystone.feature` middleware and `BSPDX\Keystone\Http\Middleware\EnsureFeatureEnabled`. `multi_tenant` is the only feature flag and was never used to gate routes. ([UPGRADING](UPGRADING.md#13-keystonefeature-middleware-removed-new-namespaced-aliases))
 - `MIGRATING-TO-AUTHKIT-0.4.0.md` (obsolete).
 
 ### Security
@@ -87,11 +112,11 @@ Hardening for the 1.0 release candidate. This release contains several **securit
 
 ### Testing
 
-- The suites now run the package's real migrations (plus a test-only users table) instead of copies, so the single-tenant suite runs against a users table with no `tenant_id`.
-- New coverage: API security (escalation, global-row writes, tenant-aware validation, listing), the Gate callback, the default guard, caller-independent relationships, integer IDs, user deletion, route loading, the multi-tenant upgrade (command and migration), duplicate guards, seeders, schema, `--tenant`, and middleware aliases.
-- ✅ Multi-tenant suite: 213 tests, 212 passing and 1 skipped (517 assertions). Up from 106.
-- ✅ Single-tenant suite: 125 tests, 99 passing and 26 multi-tenant-only tests skipped (265 assertions). Up from 38.
-- ✅ Both suites also pass on MySQL 8.4 and PostgreSQL 17. On MySQL, the `ddl` group is excluded because MySQL commits schema changes implicitly.
+- The suites now run the package's real migrations (plus a test-only users table) instead of copies. With the uniform schema, both suites run against the same tables, and the single-tenant suite no longer skips multi-tenant-only tests.
+- New coverage: API security (escalation, global-row writes, tenant-aware validation, listing), response shapes, pagination, request limits, the rate limit, the resource controllers, exception rendering, the Gate callback and its per-request cache reads, the default guard, caller-independent relationships, integer IDs, typed signatures, the `KeystoneUser` contract, all-or-nothing sync, custom primary keys, user deletion, route loading, the uniform-schema migrations (including a rebuilt pre-change single-tenant schema), redundant index removal, the enable and disable commands, duplicate guards, seeders, schema, `--tenant`, and middleware aliases.
+- ✅ Multi-tenant suite: 294 tests passing (892 assertions). Up from 106.
+- ✅ Single-tenant suite: 204 tests passing (695 assertions). Up from 38.
+- CI also runs both suites on MySQL 8.4 and PostgreSQL 17. On MySQL, the `ddl` group is excluded because MySQL commits schema changes implicitly.
 
 ### Breaking Changes
 
@@ -110,14 +135,26 @@ See [UPGRADING.md](UPGRADING.md) for step-by-step instructions. Summary:
 | `load_routes` loads API routes only | Apps relying on the auto-loaded demo web routes |
 | `keystone.feature` removed | Routes using `keystone.feature:...` |
 | Service interface signatures | Custom implementations of `RoleServiceInterface` / `PermissionServiceInterface` |
+| `implements KeystoneUser` required | Every app: the user model, and any other model holding roles |
+| Laravel 12.41 minimum | Apps on Laravel 12.0–12.40 |
+| One schema in both modes | Installs created in single-tenant mode (new migrations), and code catching `QueryException` for duplicate names |
+| Exceptions render as 409 / 422 / 403 | Apps relying on a 500, or on these exceptions being reported |
+| Fixed API response shapes | Clients reading `tenant_id`, `updated_at`, `pivot`, or permission objects, or the old list `created_at` format |
+| Service interface methods and `KeystoneUser` parameters | Custom service implementations |
+| Controller split | Apps with a published `routes/keystone-api.php` or references to `RolePermissionController` actions |
+| Typed public signatures | Subclasses and overrides of the trait or models; calls with unsupported argument types |
 
 #### Migration Guide
 
 1. Read [UPGRADING.md](UPGRADING.md) and work through each section that applies to you.
-2. Re-publish migrations if you published them (`php artisan vendor:publish --tag=keystone-migrations`), then run `php artisan migrate`.
-3. If you use the management API, give your admin roles the permissions they hand out, or perform those grants as a super-admin.
-4. If your default guard isn't `web`, update existing rows' `guard_name` or pass the guard explicitly.
-5. Replace `keystone.feature:` middleware and any reliance on demo users from `KeystoneSeeder`.
+2. Add `implements KeystoneUser` next to `use HasKeystone;` on your user model ([§1](UPGRADING.md#1-add-implements-keystoneuser-to-your-user-model)).
+3. Update Laravel to 12.41 or later if you're on an earlier 12.x ([§2](UPGRADING.md#2-laravel-1241-or-later)).
+4. Re-publish migrations if you published them (`php artisan vendor:publish --tag=keystone-migrations`) to get `00004`–`00006`, then run `php artisan migrate`. On large tables, run it in a maintenance window ([§3](UPGRADING.md#3-update-the-package-and-migrations)).
+5. Re-publish or update `routes/keystone-api.php` for the new controllers ([§16](UPGRADING.md#16-management-api-controllers-split-by-resource)), and update API clients for the new response shapes ([§15](UPGRADING.md#15-management-api-response-shapes)).
+6. Custom service implementations: add the pagination methods and take `KeystoneUser` ([§14](UPGRADING.md#14-custom-service-implementations)). Overrides of trait or model methods: match the new signatures ([§18](UPGRADING.md#18-typed-method-signatures)).
+7. If you use the management API, give your admin roles the permissions they hand out, or perform those grants as a super-admin.
+8. If your default guard isn't `web`, update existing rows' `guard_name` or pass the guard explicitly.
+9. Replace `keystone.feature:` middleware and any reliance on demo users from `KeystoneSeeder`.
 
 ---
 

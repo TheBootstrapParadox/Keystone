@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use BSPDX\Keystone\Http\Controllers\RolePermissionController;
+use BSPDX\Keystone\Http\Controllers\UserAccessController;
+use BSPDX\Keystone\Http\Controllers\UserPermissionController;
+use BSPDX\Keystone\Http\Controllers\UserRoleController;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use Illuminate\Support\Facades\DB;
@@ -24,9 +26,9 @@ class UserRouteBindingTest extends TestCase
         parent::setUp();
 
         Route::middleware(['web'])->group(function () {
-            Route::post('/users/{user}/roles', [RolePermissionController::class, 'assignRoles']);
-            Route::post('/users/{user}/permissions', [RolePermissionController::class, 'assignPermissions']);
-            Route::get('/users/{user}/roles-permissions', [RolePermissionController::class, 'userRolesPermissions']);
+            Route::post('/users/{user}/roles', [UserRoleController::class, 'store']);
+            Route::post('/users/{user}/permissions', [UserPermissionController::class, 'store']);
+            Route::get('/users/{user}/roles-permissions', [UserAccessController::class, 'show']);
         });
 
         KeystoneRole::withoutTenant()->create(['name' => 'editor']);

@@ -2,6 +2,7 @@
 
 namespace BSPDX\Keystone\Http\Support;
 
+use BSPDX\Keystone\Contracts\KeystoneUser;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -119,15 +120,12 @@ final class PrivilegeEscalationGuard
 
     private function callerIsUnrestricted(): bool
     {
-        return $this->caller !== null
-            && method_exists($this->caller, 'isSuperAdmin')
-            && $this->caller->isSuperAdmin();
+        return $this->caller instanceof KeystoneUser && $this->caller->isSuperAdmin();
     }
 
     private function callerHolds(KeystonePermission $permission): bool
     {
-        return $this->caller !== null
-            && method_exists($this->caller, 'hasPermissionTo')
+        return $this->caller instanceof KeystoneUser
             && $this->caller->hasPermissionTo($permission->name, $permission->guard_name);
     }
 

@@ -2,8 +2,10 @@
 
 namespace BSPDX\Keystone\Services;
 
+use BSPDX\Keystone\Contracts\KeystoneUser;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Support\DefaultGuard;
+use Illuminate\Cache\CacheManager;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\Collection;
@@ -21,11 +23,6 @@ use WeakMap;
 class PermissionRegistrar
 {
     /**
-     * The cache repository instance.
-     */
-    protected CacheRepository $cache;
-
-    /**
      * The cache key for storing permissions.
      */
     protected string $cacheKey = 'keystone.permissions.all.v2';
@@ -37,10 +34,21 @@ class PermissionRegistrar
      */
     protected WeakMap $registeredGates;
 
-    public function __construct(CacheRepository $cache)
+    public function __construct(protected CacheManager $cache)
     {
-        $this->cache = $cache;
         $this->registeredGates = new WeakMap;
+    }
+
+    /**
+     * The memoized default cache store.
+     *
+     * Its in-memory copy is scoped to the current request, job, or command,
+     * so the store is read at most once per execution and a long-lived worker
+     * still sees changes made by other processes in its next job.
+     */
+    protected function store(): CacheRepository
+    {
+        return $this->cache->memo();
     }
 
     /**
@@ -76,14 +84,18 @@ class PermissionRegistrar
         $this->registeredGates[$gate] = true;
 
         $gate->before(function ($user, $ability) {
-            if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            // Users outside Keystone (e.g. another guard's model) are left to policies
+            if (! $user instanceof KeystoneUser) {
+                return null;
+            }
+
+            if ($user->isSuperAdmin()) {
                 return true;
             }
 
             // The cached name list keeps non-permission abilities (policy
             // methods, defined gates) from costing a query on every check.
             if (is_string($ability)
-                && method_exists($user, 'hasPermissionTo')
                 && $this->getAllPermissionNames()->contains($ability)
                 && $user->hasPermissionTo($ability)) {
                 return true;
@@ -100,7 +112,7 @@ class PermissionRegistrar
      */
     protected function getPermissions()
     {
-        $rows = $this->cache->remember(
+        $rows = $this->store()->remember(
             $this->cacheKey,
             $this->cacheExpiration(),
             fn () => KeystonePermission::withoutTenant()
@@ -122,7 +134,7 @@ class PermissionRegistrar
      */
     public function forgetCachedPermissions(): void
     {
-        $this->cache->forget($this->cacheKey);
+        $this->store()->forget($this->cacheKey);
     }
 
     /**

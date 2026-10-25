@@ -2,17 +2,25 @@
 
 namespace BSPDX\Keystone\Services\Contracts;
 
+use BSPDX\Keystone\Contracts\KeystoneUser;
 use BSPDX\Keystone\Exceptions\CannotDeleteSuperAdminRole;
 use BSPDX\Keystone\Models\KeystoneRole;
-use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
 interface RoleServiceInterface
 {
     /**
-     * Get all roles with their permissions.
+     * Get all roles with their permissions, ordered by name then id.
      */
     public function getAllWithPermissions(): Collection;
+
+    /**
+     * One page of the roles getAllWithPermissions() returns.
+     *
+     * @return LengthAwarePaginator<int, KeystoneRole>
+     */
+    public function paginateWithPermissions(int $perPage, ?int $page = null): LengthAwarePaginator;
 
     /**
      * Create a new role.
@@ -34,7 +42,7 @@ interface RoleServiceInterface
     /**
      * Get all roles for a user.
      */
-    public function getUserRoles(Authenticatable $user): Collection;
+    public function getUserRoles(KeystoneUser $user): Collection;
 
     /**
      * Find a role by name.
@@ -49,12 +57,12 @@ interface RoleServiceInterface
     /**
      * Assign role(s) to a user.
      */
-    public function assignToUser(Authenticatable $user, string|array $roles): void;
+    public function assignToUser(KeystoneUser $user, string|array $roles): void;
 
     /**
      * Remove role(s) from a user.
      */
-    public function removeFromUser(Authenticatable $user, string|array $roles): void;
+    public function removeFromUser(KeystoneUser $user, string|array $roles): void;
 
     /**
      * Clear the role and permission cache.

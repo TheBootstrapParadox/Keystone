@@ -5,16 +5,16 @@ namespace BSPDX\Keystone\Console\Commands;
 use BSPDX\Keystone\Console\Commands\Concerns\InteractsWithKeystone;
 use BSPDX\Keystone\Database\MultiTenantSchemaUpgrade;
 use Illuminate\Console\Command;
-use Illuminate\Console\ConfirmableTrait;
+use Illuminate\Support\Facades\DB;
 
 class EnableMultiTenancyCommand extends Command
 {
-    use ConfirmableTrait, InteractsWithKeystone;
+    use InteractsWithKeystone;
 
     protected $signature = 'keystone:enable-multi-tenancy
-        {--force : Run without confirmation in production}';
+        {--force : Run without asking for confirmation}';
 
-    protected $description = 'Upgrade a single-tenant Keystone schema to multi-tenant';
+    protected $description = "Move existing role and permission assignments into their users' tenants";
 
     public function handle(): int
     {
@@ -24,30 +24,28 @@ class EnableMultiTenancyCommand extends Command
             return self::FAILURE;
         }
 
-        if (! $this->confirmToProceed()) {
+        if (! $this->option('force') && ! $this->confirm(
+            "Every assignment stored without a tenant will be moved into its user's tenant, including ones stored that way on purpose. Continue?"
+        )) {
             return self::FAILURE;
         }
 
         try {
-            $changes = (new MultiTenantSchemaUpgrade)->run();
+            $changed = DB::transaction(fn () => (new MultiTenantSchemaUpgrade)->backfillAssignments());
         } catch (\Exception $e) {
-            $this->error("Failed to upgrade the schema: {$e->getMessage()}");
+            $this->error("Failed to move assignments into tenants: {$e->getMessage()}");
 
             return self::FAILURE;
         }
 
-        if ($changes === []) {
-            $this->info('The Keystone schema is already multi-tenant. Nothing to change.');
+        if ($changed === 0) {
+            $this->info('Every assignment already has a tenant or belongs to a user without one. Nothing to change.');
 
             return self::SUCCESS;
         }
 
-        foreach ($changes as $change) {
-            $this->line("  - {$change}");
-        }
-
         $this->clearPermissionCache();
-        $this->info('Keystone schema upgraded to multi-tenant. Existing roles and permissions are global.');
+        $this->info("Moved {$changed} assignment(s) into their users' tenants.");
 
         return self::SUCCESS;
     }

@@ -26,12 +26,13 @@ jobs:
       fail-fast: false
       matrix:
         php: ["8.2", "8.3", "8.4", "8.5"]
-        laravel: ["12.*", "13.*"]
+        # ^12.41 so prefer-lowest resolves to Keystone's floor (Cache::memo(), Connection::afterRollBack())
+        laravel: ["^12.41", "^13.0"]
         stability: [prefer-lowest, prefer-stable]
         exclude:
           # Laravel 13 requires PHP 8.3+
           - php: "8.2"
-            laravel: "13.*"
+            laravel: "^13.0"
 
     name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.stability }}
 
@@ -161,8 +162,9 @@ jobs:
           KEYSTONE_MULTI_TENANT=true php artisan migrate:fresh --path=tests/database/migrations --path=database/migrations --force
           KEYSTONE_MULTI_TENANT=true php artisan migrate:rollback --path=tests/database/migrations --path=database/migrations --force
 
-      - name: Single-tenant to multi-tenant upgrade
+      - name: Switch multi-tenancy on and off without a schema change
         run: |
           KEYSTONE_MULTI_TENANT=false php artisan migrate:fresh --path=tests/database/migrations --path=database/migrations --force
-          KEYSTONE_MULTI_TENANT=true php artisan keystone:enable-multi-tenancy
-          KEYSTONE_MULTI_TENANT=true php artisan keystone:enable-multi-tenancy | grep "already multi-tenant"
+          KEYSTONE_MULTI_TENANT=true php artisan keystone:enable-multi-tenancy --force
+          KEYSTONE_MULTI_TENANT=true php artisan keystone:enable-multi-tenancy --force | grep "Nothing to change"
+          KEYSTONE_MULTI_TENANT=true php artisan keystone:disable-multi-tenancy --force
