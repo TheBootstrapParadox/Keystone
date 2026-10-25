@@ -116,7 +116,7 @@ Hardening for the 1.0 release candidate. This release contains several **securit
 - New coverage: API security (escalation, global-row writes, tenant-aware validation, listing), response shapes, pagination, request limits, the rate limit, the resource controllers, exception rendering, the Gate callback and its per-request cache reads, the default guard, caller-independent relationships, integer IDs, typed signatures, the `KeystoneUser` contract, all-or-nothing sync, custom primary keys, user deletion, route loading, the uniform-schema migrations (including a rebuilt pre-change single-tenant schema), redundant index removal, the enable and disable commands, duplicate guards, seeders, schema, `--tenant`, and middleware aliases.
 - ✅ Multi-tenant suite: 296 tests passing (896 assertions). Up from 106.
 - ✅ Single-tenant suite: 206 tests passing (699 assertions). Up from 38.
-- CI also runs both suites on MySQL 8.4 and PostgreSQL 17. On MySQL, the `ddl` group is excluded because MySQL commits schema changes implicitly.
+- ✅ Both suites also pass on MySQL 8.4 and PostgreSQL 17 in CI. On MySQL, the `ddl` group is excluded because MySQL commits schema changes implicitly.
 
 ### Breaking Changes
 
