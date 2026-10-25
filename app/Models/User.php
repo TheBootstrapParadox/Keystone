@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use BSPDX\Keystone\Contracts\KeystoneUser;
 use BSPDX\Keystone\Traits\HasKeystone;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -11,7 +12,7 @@ use Illuminate\Notifications\Notifiable;
 /**
  * @property string|null $tenant_id
  */
-class User extends Authenticatable
+class User extends Authenticatable implements KeystoneUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, HasKeystone, Notifiable;

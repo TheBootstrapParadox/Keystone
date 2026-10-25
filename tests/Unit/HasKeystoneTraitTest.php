@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\User;
+use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
 use PHPUnit\Framework\Attributes\Test;
@@ -80,6 +81,37 @@ class HasKeystoneTraitTest extends TestCase
         $this->assertTrue($user->hasPermissionTo('anything'));
         $this->assertTrue($user->hasAnyPermission('anything', 'else'));
         $this->assertTrue($user->hasAllPermissions('anything', 'else'));
-        $this->assertTrue($user->hasDirectPermission('anything'));
+    }
+
+    #[Test]
+    public function direct_permission_checks_are_literal_for_super_admins()
+    {
+        KeystoneRole::create(['name' => 'super-admin']);
+        KeystonePermission::create(['name' => 'edit-posts']);
+        $user = User::factory()->create();
+        $user->assignRole('super-admin');
+
+        $this->assertFalse($user->hasDirectPermission('edit-posts'));
+
+        $user->givePermissionTo('edit-posts');
+
+        $this->assertTrue($user->hasDirectPermission('edit-posts'));
+    }
+
+    #[Test]
+    public function has_all_roles_with_an_array_requires_every_role()
+    {
+        KeystoneRole::create(['name' => 'admin']);
+        KeystoneRole::create(['name' => 'editor']);
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+
+        $this->assertFalse($user->hasAllRoles(['admin', 'editor']));
+        $this->assertFalse($user->hasAllRoles(['admin'], ['editor']));
+        $this->assertTrue($user->hasAllRoles(['admin']));
+
+        $user->assignRole('editor');
+
+        $this->assertTrue($user->hasAllRoles(['admin', 'editor']));
     }
 }

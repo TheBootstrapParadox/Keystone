@@ -3,6 +3,7 @@ name: Tests
 on:
   push:
     branches:
+      - main
       - develop
       - bugfix/**
       - feature/**
@@ -14,16 +15,26 @@ on:
 permissions:
   contents: read
 
+env:
+  CACHE_STORE: array
+
 jobs:
   tests:
     runs-on: ubuntu-latest
 
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        php: [8.2, 8.3, 8.4]
+        php: ["8.2", "8.3", "8.4", "8.5"]
+        # ^12.41 so prefer-lowest resolves to Keystone's floor (Cache::memo(), Connection::afterRollBack())
+        laravel: ["^12.41", "^13.0"]
+        stability: [prefer-lowest, prefer-stable]
+        exclude:
+          # Laravel 13 requires PHP 8.3+
+          - php: "8.2"
+            laravel: "^13.0"
 
-    name: PHP ${{ matrix.php }}
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.stability }}
 
     steps:
       - name: Checkout code
@@ -37,18 +48,123 @@ jobs:
           coverage: none
 
       - name: Install Composer dependencies
+        run: |
+          composer require "laravel/framework:${{ matrix.laravel }}" --no-update --no-interaction
+          composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
+
+      - name: Copy environment file
+        run: cp .env.example .env
+
+      - name: Multi-tenant suite
+        run: vendor/bin/phpunit
+
+      - name: Single-tenant suite
+        run: vendor/bin/phpunit -c phpunit.single-tenant.xml
+
+  quality:
+    runs-on: ubuntu-latest
+
+    name: Lint & static analysis
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
+          coverage: none
+
+      - name: Install Composer dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
 
       - name: Copy environment file
         run: cp .env.example .env
 
-      - name: Run migrations
-        run: php artisan migrate --force
-        env:
-          CACHE_STORE: array
+      - name: Pint
+        run: composer lint
 
-      - name: Execute tests
-        run: php vendor/bin/phpunit
+      - name: PHPStan
+        run: composer analyze
+
+  databases:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [mysql, pgsql]
+
+    name: ${{ matrix.database }}
+
+    services:
+      mysql:
+        image: mysql:8.4
         env:
-          APP_ENV: testing
-          CACHE_STORE: array
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: keystone
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -psecret --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: keystone
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+
+    env:
+      DB_CONNECTION: ${{ matrix.database }}
+      DB_HOST: 127.0.0.1
+      DB_PORT: ${{ matrix.database == 'mysql' && '3306' || '5432' }}
+      DB_DATABASE: keystone
+      DB_USERNAME: ${{ matrix.database == 'mysql' && 'root' || 'postgres' }}
+      DB_PASSWORD: secret
+      # MySQL commits DDL implicitly, which breaks RefreshDatabase isolation,
+      # so the tests that change the schema run on PostgreSQL (and SQLite)
+      # only; the upgrade path is exercised through the CLI below instead.
+      EXCLUDE_GROUP: ${{ matrix.database == 'mysql' && 'ddl' || 'none' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_mysql, pdo_pgsql, sqlite, pdo_sqlite
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Copy environment file
+        run: cp .env.example .env
+
+      - name: Multi-tenant suite
+        run: vendor/bin/phpunit --exclude-group "$EXCLUDE_GROUP"
+
+      - name: Single-tenant suite
+        run: vendor/bin/phpunit -c phpunit.single-tenant.xml --exclude-group "$EXCLUDE_GROUP"
+
+      - name: Fresh migrations (both modes) and rollback
+        run: |
+          KEYSTONE_MULTI_TENANT=false php artisan migrate:fresh --path=tests/database/migrations --path=database/migrations --force
+          KEYSTONE_MULTI_TENANT=true php artisan migrate:fresh --path=tests/database/migrations --path=database/migrations --force
+          KEYSTONE_MULTI_TENANT=true php artisan migrate:rollback --path=tests/database/migrations --path=database/migrations --force
+
+      - name: Switch multi-tenancy on and off without a schema change
+        run: |
+          KEYSTONE_MULTI_TENANT=false php artisan migrate:fresh --path=tests/database/migrations --path=database/migrations --force
+          KEYSTONE_MULTI_TENANT=true php artisan keystone:enable-multi-tenancy --force
+          KEYSTONE_MULTI_TENANT=true php artisan keystone:enable-multi-tenancy --force | grep "Nothing to change"
+          KEYSTONE_MULTI_TENANT=true php artisan keystone:disable-multi-tenancy --force

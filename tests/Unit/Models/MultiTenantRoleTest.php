@@ -3,9 +3,9 @@
 namespace Tests\Unit\Models;
 
 use App\Models\User;
+use BSPDX\Keystone\Exceptions\RoleAlreadyExists;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
@@ -155,8 +155,8 @@ class MultiTenantRoleTest extends TestCase
         $this->assertNotEquals($roleA->id, $roleB->id);
 
         // Verify uniqueness: Try to create duplicate in same tenant (should fail due to unique constraint)
-        // Database will throw QueryException due to unique constraint violation
-        $this->expectException(QueryException::class);
+        // The model rejects it before the database's unique key does
+        $this->expectException(RoleAlreadyExists::class);
         KeystoneRole::create(['name' => 'manager', 'title' => 'Manager Duplicate']);
     }
 

@@ -7,17 +7,9 @@ use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
 class CacheService implements CacheServiceInterface
 {
     /**
-     * The Keystone permission registrar instance.
-     */
-    protected PermissionRegistrar $registrar;
-
-    /**
      * Create a new cache service instance.
      */
-    public function __construct(PermissionRegistrar $registrar)
-    {
-        $this->registrar = $registrar;
-    }
+    public function __construct(protected PermissionRegistrar $registrar) {}
 
     /**
      * Clear the permission cache.

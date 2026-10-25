@@ -2,12 +2,17 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\User;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
 use BSPDX\Keystone\Services\PermissionRegistrar;
+use Illuminate\Cache\CacheManager;
+use Illuminate\Cache\Events\CacheHit;
+use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
@@ -26,7 +31,7 @@ class PermissionRegistrarTest extends TestCase
             ->with('keystone.permissions.all.v2', 12345, Mockery::type('Closure'))
             ->andReturn(new Collection);
 
-        $registrar = new PermissionRegistrar($cache);
+        $registrar = new PermissionRegistrar($this->managerReturning($cache));
 
         $registrar->getAllPermissionNames();
     }
@@ -42,7 +47,7 @@ class PermissionRegistrarTest extends TestCase
 
         // Construct BEFORE changing config to prove the TTL is read at call
         // time, not captured at construction (the registrar is a singleton).
-        $registrar = new PermissionRegistrar($cache);
+        $registrar = new PermissionRegistrar($this->managerReturning($cache));
 
         config(['keystone.rbac.cache_expiration' => 555]);
 
@@ -60,7 +65,7 @@ class PermissionRegistrarTest extends TestCase
             ->with('keystone.permissions.all.v2', 86400, Mockery::type('Closure'))
             ->andReturn(new Collection);
 
-        $registrar = new PermissionRegistrar($cache);
+        $registrar = new PermissionRegistrar($this->managerReturning($cache));
 
         $registrar->getAllPermissionNames();
     }
@@ -145,5 +150,51 @@ class PermissionRegistrarTest extends TestCase
         }
 
         $this->assertFalse($registrar->permissionExists('ghost-permission'));
+    }
+
+    #[Test]
+    public function many_checks_in_one_request_read_the_cache_store_once(): void
+    {
+        $permission = KeystonePermission::create(['name' => 'edit-posts']);
+        $user = User::factory()->create();
+        $user->givePermissionTo($permission);
+        app(PermissionRegistrar::class)->getAllPermissionNames(); // fill the store
+        app()->forgetScopedInstances(); // start a fresh request
+
+        $reads = 0;
+        Event::listen([CacheHit::class, CacheMissed::class], function ($event) use (&$reads) {
+            if ($event->key === 'keystone.permissions.all.v2') {
+                $reads++;
+            }
+        });
+
+        for ($i = 0; $i < 20; $i++) {
+            $user->can($i % 2 === 0 ? 'edit-posts' : 'update');
+        }
+
+        $this->assertSame(1, $reads);
+    }
+
+    #[Test]
+    public function the_next_job_sees_a_permission_another_process_created(): void
+    {
+        $registrar = app(PermissionRegistrar::class);
+        $this->assertFalse($registrar->permissionExists('publish-posts')); // this job's copy
+
+        // Another process adds the permission and clears the shared cache key
+        DB::table('permissions')->insert(['name' => 'publish-posts', 'guard_name' => 'web']);
+        cache()->store()->forget('keystone.permissions.all.v2');
+
+        app()->forgetScopedInstances(); // the worker starts its next job
+
+        $this->assertTrue($registrar->permissionExists('publish-posts'));
+    }
+
+    private function managerReturning(CacheRepository $repository): CacheManager
+    {
+        $manager = Mockery::mock(CacheManager::class);
+        $manager->shouldReceive('memo')->andReturn($repository);
+
+        return $manager;
     }
 }

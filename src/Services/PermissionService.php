@@ -2,30 +2,52 @@
 
 namespace BSPDX\Keystone\Services;
 
+use BSPDX\Keystone\Contracts\KeystoneUser;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\PermissionServiceInterface;
-use Illuminate\Contracts\Auth\Authenticatable;
+use BSPDX\Keystone\Support\DefaultGuard;
+use BSPDX\Keystone\Support\MultiTenancy;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class PermissionService implements PermissionServiceInterface
 {
     /**
-     * Get all permissions with their roles.
+     * Get all permissions with their roles, ordered by name then id.
      */
     public function getAllWithRoles(): Collection
     {
-        return KeystonePermission::with('roles')->get();
+        return $this->orderedWithRoles()->get();
+    }
+
+    /**
+     * One page of the permissions getAllWithRoles() returns.
+     *
+     * @return LengthAwarePaginator<int, KeystonePermission>
+     */
+    public function paginateWithRoles(int $perPage, ?int $page = null): LengthAwarePaginator
+    {
+        return $this->orderedWithRoles()->paginate($perPage, ['*'], 'page', $page);
+    }
+
+    /**
+     * @return Builder<KeystonePermission>
+     */
+    protected function orderedWithRoles(): Builder
+    {
+        return KeystonePermission::with('roles')->orderBy('name')->orderBy('id');
     }
 
     /**
      * Create a new permission.
      */
-    public function create(string $name, string $guardName = 'web'): KeystonePermission
+    public function create(string $name, ?string $guardName = null): KeystonePermission
     {
         return KeystonePermission::create([
             'name' => $name,
-            'guard_name' => $guardName,
+            'guard_name' => DefaultGuard::resolve($guardName),
         ]);
     }
 
@@ -40,7 +62,7 @@ class PermissionService implements PermissionServiceInterface
     /**
      * Sync permissions directly to a user.
      */
-    public function syncToUser(Authenticatable $user, array $permissions): void
+    public function syncToUser(KeystoneUser $user, array $permissions): void
     {
         $user->syncPermissions($permissions);
     }
@@ -48,7 +70,7 @@ class PermissionService implements PermissionServiceInterface
     /**
      * Get direct permissions assigned to a user.
      */
-    public function getUserPermissions(Authenticatable $user): Collection
+    public function getUserPermissions(KeystoneUser $user): Collection
     {
         return $user->permissions()->get();
     }
@@ -56,7 +78,7 @@ class PermissionService implements PermissionServiceInterface
     /**
      * Get all permissions for a user (including via roles).
      */
-    public function getAllUserPermissions(Authenticatable $user): Collection
+    public function getAllUserPermissions(KeystoneUser $user): Collection
     {
         return $user->getAllPermissions();
     }
@@ -64,15 +86,23 @@ class PermissionService implements PermissionServiceInterface
     /**
      * Find a permission by name.
      */
-    public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystonePermission
+    public function findByName(string $name, ?string $guardName = null, ?string $tenantId = null): ?KeystonePermission
     {
-        $query = KeystonePermission::where('name', $name)->where('guard_name', $guardName);
+        $query = KeystonePermission::where('name', $name)->where('guard_name', DefaultGuard::resolve($guardName));
 
-        if (config('keystone.features.multi_tenant', false) && $tenantId !== null) {
-            $query->where('tenant_id', $tenantId);
+        if (MultiTenancy::enabled()) {
+            if ($tenantId !== null) {
+                $query->where('tenant_id', $tenantId);
+            }
+
+            // With a reference tenant (the argument, or the caller's tenant
+            // through the tenant scope) its own row wins over a global row.
+            // Without one, the global row wins over any tenant's row.
+            $hasReferenceTenant = $tenantId !== null || auth()->user()?->getAttribute('tenant_id') !== null;
+            $query->orderByRaw($hasReferenceTenant ? 'tenant_id IS NULL' : 'tenant_id IS NOT NULL');
         }
 
-        return $query->first();
+        return $query->orderBy('id')->first();
     }
 
     /**
@@ -80,7 +110,7 @@ class PermissionService implements PermissionServiceInterface
      */
     public function getAllForTenant(?string $tenantId = null): Collection
     {
-        if (! config('keystone.features.multi_tenant', false)) {
+        if (! MultiTenancy::enabled()) {
             return $this->getAllWithRoles();
         }
 
@@ -96,7 +126,7 @@ class PermissionService implements PermissionServiceInterface
     /**
      * Assign permission(s) directly to a user.
      */
-    public function assignToUser(Authenticatable $user, string|array $permissions): void
+    public function assignToUser(KeystoneUser $user, string|array $permissions): void
     {
         $user->givePermissionTo($permissions);
     }
@@ -104,7 +134,7 @@ class PermissionService implements PermissionServiceInterface
     /**
      * Remove permission(s) from a user.
      */
-    public function removeFromUser(Authenticatable $user, string|array $permissions): void
+    public function removeFromUser(KeystoneUser $user, string|array $permissions): void
     {
         $user->revokePermissionTo($permissions);
     }

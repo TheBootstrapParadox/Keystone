@@ -2,55 +2,70 @@
 
 namespace BSPDX\Keystone\Services;
 
+use BSPDX\Keystone\Contracts\KeystoneUser;
+use BSPDX\Keystone\Exceptions\CannotDeleteSuperAdminRole;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
 use BSPDX\Keystone\Services\Contracts\RoleServiceInterface;
-use Illuminate\Contracts\Auth\Authenticatable;
+use BSPDX\Keystone\Support\DefaultGuard;
+use BSPDX\Keystone\Support\MultiTenancy;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class RoleService implements RoleServiceInterface
 {
     /**
-     * The cache service instance.
-     */
-    protected CacheServiceInterface $cacheService;
-
-    /**
      * Create a new role service instance.
      */
-    public function __construct(CacheServiceInterface $cacheService)
-    {
-        $this->cacheService = $cacheService;
-    }
+    public function __construct(protected CacheServiceInterface $cacheService) {}
 
     /**
-     * Get all roles with their permissions.
+     * Get all roles with their permissions, ordered by name then id.
      */
     public function getAllWithPermissions(): Collection
     {
-        return KeystoneRole::with('permissions')->get();
+        return $this->orderedWithPermissions()->get();
+    }
+
+    /**
+     * One page of the roles getAllWithPermissions() returns.
+     *
+     * @return LengthAwarePaginator<int, KeystoneRole>
+     */
+    public function paginateWithPermissions(int $perPage, ?int $page = null): LengthAwarePaginator
+    {
+        return $this->orderedWithPermissions()->paginate($perPage, ['*'], 'page', $page);
+    }
+
+    /**
+     * @return Builder<KeystoneRole>
+     */
+    protected function orderedWithPermissions(): Builder
+    {
+        return KeystoneRole::with('permissions')->orderBy('name')->orderBy('id');
     }
 
     /**
      * Create a new role.
      */
-    public function create(string $name, string $guardName = 'web'): KeystoneRole
+    public function create(string $name, ?string $guardName = null): KeystoneRole
     {
         return KeystoneRole::create([
             'name' => $name,
-            'guard_name' => $guardName,
+            'guard_name' => DefaultGuard::resolve($guardName),
         ]);
     }
 
     /**
      * Delete a role.
      *
-     * @throws \Exception if role cannot be deleted
+     * @throws CannotDeleteSuperAdminRole
      */
     public function delete(KeystoneRole $role): void
     {
         if ($role->isSuperAdmin()) {
-            throw new \Exception('Cannot delete the super admin role.');
+            throw new CannotDeleteSuperAdminRole;
         }
 
         $role->delete();
@@ -69,7 +84,7 @@ class RoleService implements RoleServiceInterface
     /**
      * Get all roles for a user.
      */
-    public function getUserRoles(Authenticatable $user): Collection
+    public function getUserRoles(KeystoneUser $user): Collection
     {
         return $user->roles()->get();
     }
@@ -77,15 +92,23 @@ class RoleService implements RoleServiceInterface
     /**
      * Find a role by name.
      */
-    public function findByName(string $name, string $guardName = 'web', ?string $tenantId = null): ?KeystoneRole
+    public function findByName(string $name, ?string $guardName = null, ?string $tenantId = null): ?KeystoneRole
     {
-        $query = KeystoneRole::where('name', $name)->where('guard_name', $guardName);
+        $query = KeystoneRole::where('name', $name)->where('guard_name', DefaultGuard::resolve($guardName));
 
-        if (config('keystone.features.multi_tenant', false) && $tenantId !== null) {
-            $query->where('tenant_id', $tenantId);
+        if (MultiTenancy::enabled()) {
+            if ($tenantId !== null) {
+                $query->where('tenant_id', $tenantId);
+            }
+
+            // With a reference tenant (the argument, or the caller's tenant
+            // through the tenant scope) its own row wins over a global row.
+            // Without one, the global row wins over any tenant's row.
+            $hasReferenceTenant = $tenantId !== null || auth()->user()?->getAttribute('tenant_id') !== null;
+            $query->orderByRaw($hasReferenceTenant ? 'tenant_id IS NULL' : 'tenant_id IS NOT NULL');
         }
 
-        return $query->first();
+        return $query->orderBy('id')->first();
     }
 
     /**
@@ -93,7 +116,7 @@ class RoleService implements RoleServiceInterface
      */
     public function getAllForTenant(?string $tenantId = null): Collection
     {
-        if (! config('keystone.features.multi_tenant', false)) {
+        if (! MultiTenancy::enabled()) {
             return $this->getAllWithPermissions();
         }
 
@@ -109,7 +132,7 @@ class RoleService implements RoleServiceInterface
     /**
      * Assign role(s) to a user.
      */
-    public function assignToUser(Authenticatable $user, string|array $roles): void
+    public function assignToUser(KeystoneUser $user, string|array $roles): void
     {
         $user->assignRole($roles);
     }
@@ -117,7 +140,7 @@ class RoleService implements RoleServiceInterface
     /**
      * Remove role(s) from a user.
      */
-    public function removeFromUser(Authenticatable $user, string|array $roles): void
+    public function removeFromUser(KeystoneUser $user, string|array $roles): void
     {
         $user->removeRole($roles);
     }

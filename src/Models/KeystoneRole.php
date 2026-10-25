@@ -2,8 +2,13 @@
 
 namespace BSPDX\Keystone\Models;
 
-use App\Models\User;
+use BSPDX\Keystone\Contracts\KeystoneUser;
+use BSPDX\Keystone\Exceptions\ReservedRoleName;
+use BSPDX\Keystone\Exceptions\RoleAlreadyExists;
 use BSPDX\Keystone\Models\Concerns\ResolvesByNameForTenant;
+use BSPDX\Keystone\Support\DefaultGuard;
+use BSPDX\Keystone\Support\MultiTenancy;
+use BSPDX\Keystone\Support\UserModel;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -52,7 +57,7 @@ class KeystoneRole extends Model
 
         // Add global scope for tenant isolation when multi-tenancy is enabled
         static::addGlobalScope('tenant', function (Builder $query) {
-            if (! config('keystone.features.multi_tenant', false)) {
+            if (! MultiTenancy::enabled()) {
                 return;
             }
 
@@ -69,16 +74,51 @@ class KeystoneRole extends Model
         static::creating(function ($role) {
             // Set guard_name if not provided
             if (! isset($role->guard_name)) {
-                $role->guard_name = 'web';
+                $role->guard_name = DefaultGuard::resolve();
             }
 
             // Set tenant_id for multi-tenant mode
-            if (config('keystone.features.multi_tenant', false) &&
+            if (MultiTenancy::enabled() &&
                 auth()->check() &&
                 ! isset($role->tenant_id)) {
                 $role->tenant_id = auth()->user()->tenant_id;
             }
+
+            static::guardReservedName($role);
+            static::guardDuplicate($role);
         });
+
+        static::updating(function (self $role) {
+            static::guardReservedName($role);
+            static::guardDuplicate($role);
+        });
+    }
+
+    /**
+     * @throws RoleAlreadyExists
+     */
+    protected static function guardDuplicate(self $role): void
+    {
+        if ($role->duplicatesAnotherRow()) {
+            throw RoleAlreadyExists::create($role->name, $role->guard_name, $role->tenant_id);
+        }
+    }
+
+    /**
+     * Refuse to store the super-admin name on a tenant-scoped role.
+     *
+     * Only a global role confers super-admin status, so a tenant role with that
+     * name would be misleading at best.
+     *
+     * @throws ReservedRoleName
+     */
+    protected static function guardReservedName(self $role): void
+    {
+        if (MultiTenancy::enabled()
+            && $role->tenant_id !== null
+            && $role->name === config('keystone.rbac.super_admin_role', 'super-admin')) {
+            throw ReservedRoleName::forTenant($role->name);
+        }
     }
 
     // ============================================
@@ -92,28 +132,32 @@ class KeystoneRole extends Model
      */
     public function permissions(): BelongsToMany
     {
+        // Not narrowed by the logged-in caller's tenant scope: what a row holds
+        // does not depend on who is asking.
         return $this->belongsToMany(
             KeystonePermission::class,
             'role_has_permissions',
             'role_id',
             'permission_id'
-        );
+        )->withoutGlobalScope('tenant')->withTimestamps();
     }
 
     /**
      * The users that have this role.
+     *
+     * @return MorphToMany<Model&KeystoneUser, $this>
      */
     public function users(): MorphToMany
     {
         $relation = $this->morphedByMany(
-            config('keystone.user.model') ?? config('auth.providers.users.model', User::class),
+            UserModel::className(),
             'model',
             'model_has_roles',
             'role_id',
             'model_id'
         )->withTimestamps();
 
-        if (config('keystone.features.multi_tenant', false)) {
+        if (MultiTenancy::enabled()) {
             $relation->withPivot('tenant_id');
         }
 
@@ -127,7 +171,7 @@ class KeystoneRole extends Model
     /**
      * Assign permissions to this role.
      */
-    public function givePermissionTo(...$permissions): self
+    public function givePermissionTo(string|int|KeystonePermission|iterable ...$permissions): static
     {
         $permissionModels = $this->convertToPermissionModels($permissions);
 
@@ -140,23 +184,25 @@ class KeystoneRole extends Model
     /**
      * Sync permissions for this role.
      */
-    public function syncPermissions(...$permissions): self
+    public function syncPermissions(string|int|KeystonePermission|iterable ...$permissions): static
     {
         $permissionModels = $this->convertToPermissionModels($permissions);
 
         $this->permissions()->sync($permissionModels->pluck('id'));
+        $this->unsetRelation('permissions');
 
         return $this;
     }
 
     /**
-     * Revoke a permission from this role.
+     * Revoke permissions from this role.
      */
-    public function revokePermissionTo($permission): self
+    public function revokePermissionTo(string|int|KeystonePermission|iterable ...$permissions): static
     {
-        $permissionModel = $this->convertToPermissionModels([$permission])->first();
+        $permissionModels = $this->convertToPermissionModels($permissions);
 
-        $this->permissions()->detach($permissionModel->id);
+        $this->permissions()->detach($permissionModels->pluck('id'));
+        $this->unsetRelation('permissions');
 
         return $this;
     }
@@ -164,8 +210,12 @@ class KeystoneRole extends Model
     /**
      * Check if role has a specific permission.
      */
-    public function hasPermissionTo($permission, ?string $guardName = null): bool
+    public function hasPermissionTo(string|int|KeystonePermission $permission, ?string $guardName = null): bool
     {
+        if (is_int($permission)) {
+            return $this->permissions->contains('id', $permission);
+        }
+
         $guardName = $guardName ?? $this->guard_name;
 
         $permissionName = $permission instanceof KeystonePermission
@@ -179,6 +229,8 @@ class KeystoneRole extends Model
 
     /**
      * Get all permission names for this role.
+     *
+     * @return Collection<int, string>
      */
     public function getPermissionNames(): Collection
     {
@@ -203,20 +255,29 @@ class KeystoneRole extends Model
 
     /**
      * Convert permission names or models to models, resolving names in this role's tenant.
+     *
+     * @param  array<int, mixed>  $permissions
+     * @return Collection<int, KeystonePermission>
      */
     protected function convertToPermissionModels(array $permissions): Collection
     {
-        return collect($permissions)->flatten()->map(fn ($permission) => $permission instanceof KeystonePermission
-            ? $permission
-            : KeystonePermission::findByNameForTenant($permission, $this->keystoneTenantId()));
+        return collect($permissions)->flatten()->map(
+            fn ($permission) => KeystonePermission::resolveForTenant($permission, $this->keystoneTenantId())
+        );
     }
 
     /**
      * Determine if this role is the super admin role.
+     *
+     * In multi-tenant mode only a global role qualifies.
      */
     public function isSuperAdmin(): bool
     {
-        return $this->name === config('keystone.rbac.super_admin_role', 'super-admin');
+        if ($this->name !== config('keystone.rbac.super_admin_role', 'super-admin')) {
+            return false;
+        }
+
+        return ! MultiTenancy::enabled() || $this->tenant_id === null;
     }
 
     /**
@@ -230,7 +291,7 @@ class KeystoneRole extends Model
     /**
      * Determine if this role belongs to a specific tenant.
      */
-    public function belongsToTenant($tenantId): bool
+    public function belongsToTenant(?string $tenantId): bool
     {
         return $this->tenant_id === $tenantId;
     }
@@ -268,10 +329,8 @@ class KeystoneRole extends Model
      * Scope a query to roles belonging to a specific tenant only.
      * Global roles (tenant_id = NULL) are excluded; use global() for those.
      * Respects the tenant global scope — chain after withoutTenant() for cross-tenant reads.
-     *
-     * @param  string|int  $tenantId
      */
-    public function scopeForTenant(Builder $query, $tenantId): Builder
+    public function scopeForTenant(Builder $query, string $tenantId): Builder
     {
         return $query->where($query->getModel()->getTable().'.tenant_id', $tenantId);
     }

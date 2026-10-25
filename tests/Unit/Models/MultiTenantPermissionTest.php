@@ -3,9 +3,9 @@
 namespace Tests\Unit\Models;
 
 use App\Models\User;
+use BSPDX\Keystone\Exceptions\PermissionAlreadyExists;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
@@ -145,8 +145,8 @@ class MultiTenantPermissionTest extends TestCase
         $this->assertNotEquals($permA->id, $permB->id);
 
         // Try to create duplicate in same tenant (should fail due to unique constraint)
-        // Database will throw QueryException due to unique constraint violation
-        $this->expectException(QueryException::class);
+        // The model rejects it before the database's unique key does
+        $this->expectException(PermissionAlreadyExists::class);
         KeystonePermission::create(['name' => 'edit-users', 'title' => 'Edit Users Duplicate']);
     }
 

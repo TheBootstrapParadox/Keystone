@@ -3,7 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use BSPDX\Keystone\Http\Controllers\PermissionController;
+use BSPDX\Keystone\Http\Controllers\RoleController;
 use BSPDX\Keystone\Http\Controllers\RolePermissionController;
+use BSPDX\Keystone\Http\Controllers\UserPermissionController;
+use BSPDX\Keystone\Http\Controllers\UserRoleController;
 use BSPDX\Keystone\Models\KeystonePermission;
 use BSPDX\Keystone\Models\KeystoneRole;
 use BSPDX\Keystone\Services\Contracts\CacheServiceInterface;
@@ -25,18 +29,18 @@ class RolePermissionApiTest extends TestCase
         // particular auth guard being configured (see routes/api.php's comment
         // about bringing your own guard).
         Route::middleware(['web'])->group(function () {
-            Route::get('/roles', [RolePermissionController::class, 'roles'])
+            Route::get('/roles', [RoleController::class, 'index'])
                 ->name('api.roles.index');
 
-            Route::get('/permissions', [RolePermissionController::class, 'permissions'])
+            Route::get('/permissions', [PermissionController::class, 'index'])
                 ->name('api.permissions.index');
 
-            Route::post('/users/{user}/roles', [RolePermissionController::class, 'assignRoles']);
-            Route::put('/users/{user}/roles', [RolePermissionController::class, 'syncRoles']);
-            Route::post('/users/{user}/permissions', [RolePermissionController::class, 'assignPermissions']);
-            Route::put('/users/{user}/permissions', [RolePermissionController::class, 'syncPermissions']);
-            Route::post('/roles/{role}/permissions', [RolePermissionController::class, 'assignPermissionsToRole']);
-            Route::put('/roles/{role}/permissions', [RolePermissionController::class, 'syncRolePermissions']);
+            Route::post('/users/{user}/roles', [UserRoleController::class, 'store']);
+            Route::put('/users/{user}/roles', [UserRoleController::class, 'update']);
+            Route::post('/users/{user}/permissions', [UserPermissionController::class, 'store']);
+            Route::put('/users/{user}/permissions', [UserPermissionController::class, 'update']);
+            Route::post('/roles/{role}/permissions', [RolePermissionController::class, 'store']);
+            Route::put('/roles/{role}/permissions', [RolePermissionController::class, 'update']);
         });
     }
 
@@ -141,6 +145,7 @@ class RolePermissionApiTest extends TestCase
         KeystonePermission::create(['name' => 'edit-posts']);
         KeystonePermission::create(['name' => 'publish-posts']);
         $target->givePermissionTo('publish-posts');
+        $caller->givePermissionTo('edit-posts'); // callers may only grant what they hold
 
         $this->actingAs($caller)->postJson("/users/{$target->id}/permissions", ['permissions' => ['edit-posts']])->assertOk();
         $this->assertEqualsCanonicalizing(
@@ -168,6 +173,7 @@ class RolePermissionApiTest extends TestCase
         KeystonePermission::create(['name' => 'view-posts']);
         KeystonePermission::create(['name' => 'edit-posts']);
         $role->givePermissionTo('view-posts');
+        $caller->givePermissionTo('edit-posts'); // callers may only grant what they hold
 
         $this->actingAs($caller)->postJson("/roles/{$role->id}/permissions", ['permissions' => ['edit-posts']])
             ->assertOk()

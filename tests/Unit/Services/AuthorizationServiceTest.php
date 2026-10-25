@@ -97,4 +97,25 @@ class AuthorizationServiceTest extends TestCase
 
         $this->assertFalse($this->service->userHasRole($user, 'editor'));
     }
+
+    #[Test]
+    public function user_has_all_roles_with_an_array_requires_every_role()
+    {
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+
+        $this->assertFalse($this->service->userHasAllRoles($user, ['admin', 'editor']));
+        $this->assertTrue($this->service->userHasAllRoles($user, ['admin']));
+    }
+
+    #[Test]
+    public function direct_permission_service_check_keeps_the_super_admin_bypass()
+    {
+        KeystoneRole::create(['name' => 'super-admin']);
+        $user = User::factory()->create();
+        $user->assignRole('super-admin');
+
+        $this->assertTrue($this->service->userHasDirectPermission($user, 'edit-posts'));
+        $this->assertFalse($user->hasDirectPermission('edit-posts'));
+    }
 }
