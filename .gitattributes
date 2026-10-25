@@ -17,6 +17,7 @@
 /.styleci.yml export-ignore
 /AGENTS.md export-ignore
 /CLAUDE.md export-ignore
+/boost.json export-ignore
 /app export-ignore
 /artisan export-ignore
 /bin export-ignore
