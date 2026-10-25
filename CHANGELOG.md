@@ -60,7 +60,7 @@ Hardening for the 1.0 release candidate. This release contains several **securit
 - The example API route group applies `throttle:60,1`.
 - `POST /api/roles` creates the role and attaches its permissions in one transaction.
 - Each role or permission name in an API request is looked up once, shared by validation and the action.
-- `RoleService::findByName()` / `PermissionService::findByName()` are deterministic: when a tenant row and a global row both match, the tenant row is returned.
+- `RoleService::findByName()` / `PermissionService::findByName()` are deterministic: when a tenant row and a global row both match, the tenant row is returned for a tenant caller or a given `tenantId`, and the global row otherwise (for example in a job or command).
 - The Gate callback reads the permission list from the cache store at most once per request, queued job, or command (`Cache::memo()`), instead of once per `can()`. A long-lived worker still sees changes made by other processes in its next job.
 - Keystone throws a `LogicException` naming `keystone.user.model` and `auth.providers.users.model` when neither is set, and no longer references `App\Models\User`.
 - Fresh installs no longer create an index on `tenant_id` alone on `roles`, `permissions`, or the pivots; the tenant-aware unique keys cover it.
@@ -114,8 +114,8 @@ Hardening for the 1.0 release candidate. This release contains several **securit
 
 - The suites now run the package's real migrations (plus a test-only users table) instead of copies. With the uniform schema, both suites run against the same tables, and the single-tenant suite no longer skips multi-tenant-only tests.
 - New coverage: API security (escalation, global-row writes, tenant-aware validation, listing), response shapes, pagination, request limits, the rate limit, the resource controllers, exception rendering, the Gate callback and its per-request cache reads, the default guard, caller-independent relationships, integer IDs, typed signatures, the `KeystoneUser` contract, all-or-nothing sync, custom primary keys, user deletion, route loading, the uniform-schema migrations (including a rebuilt pre-change single-tenant schema), redundant index removal, the enable and disable commands, duplicate guards, seeders, schema, `--tenant`, and middleware aliases.
-- ✅ Multi-tenant suite: 294 tests passing (892 assertions). Up from 106.
-- ✅ Single-tenant suite: 204 tests passing (695 assertions). Up from 38.
+- ✅ Multi-tenant suite: 296 tests passing (896 assertions). Up from 106.
+- ✅ Single-tenant suite: 206 tests passing (699 assertions). Up from 38.
 - CI also runs both suites on MySQL 8.4 and PostgreSQL 17. On MySQL, the `ddl` group is excluded because MySQL commits schema changes implicitly.
 
 ### Breaking Changes

@@ -95,8 +95,11 @@ class PermissionService implements PermissionServiceInterface
                 $query->where('tenant_id', $tenantId);
             }
 
-            // A tenant row wins over a global row with the same name
-            $query->orderByRaw('tenant_id IS NULL');
+            // With a reference tenant (the argument, or the caller's tenant
+            // through the tenant scope) its own row wins over a global row.
+            // Without one, the global row wins over any tenant's row.
+            $hasReferenceTenant = $tenantId !== null || auth()->user()?->getAttribute('tenant_id') !== null;
+            $query->orderByRaw($hasReferenceTenant ? 'tenant_id IS NULL' : 'tenant_id IS NOT NULL');
         }
 
         return $query->orderBy('id')->first();

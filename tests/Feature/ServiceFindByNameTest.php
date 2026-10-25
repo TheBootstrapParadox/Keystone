@@ -48,6 +48,27 @@ class ServiceFindByNameTest extends TestCase
     }
 
     #[Test]
+    #[DataProvider('insertionOrders')]
+    public function without_a_reference_tenant_the_global_row_is_preferred(bool $globalFirst)
+    {
+        config(['keystone.features.multi_tenant' => true]);
+
+        foreach ([KeystoneRole::class, KeystonePermission::class] as $model) {
+            if ($globalFirst) {
+                $global[$model] = $model::create(['name' => 'editor']);
+                $model::create(['name' => 'editor', 'tenant_id' => self::TENANT_A]);
+            } else {
+                $model::create(['name' => 'editor', 'tenant_id' => self::TENANT_A]);
+                $global[$model] = $model::create(['name' => 'editor']);
+            }
+        }
+
+        // No authenticated user and no tenant argument (a job or command)
+        $this->assertSame($global[KeystoneRole::class]->id, app(RoleServiceInterface::class)->findByName('editor')->id);
+        $this->assertSame($global[KeystonePermission::class]->id, app(PermissionServiceInterface::class)->findByName('editor')->id);
+    }
+
+    #[Test]
     public function single_tenant_lookup_ignores_the_tenant_argument()
     {
         config(['keystone.features.multi_tenant' => false]);
